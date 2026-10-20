@@ -64,7 +64,7 @@ final class SliderVisuals {
         if let rim = NoteVisuals.makeRim(radius: noteRadius * 0.8, height: 0.004) {
             knob.addChild(rim)
         }
-        knob.isEnabled = false
+        knob.scale = .zero // hidden until the head is hit; see TimerLabel on why not isEnabled
         root.addChild(knob)
 
         // Timer: beside the slider, clear of the track and of the judgment popups (which rise from the head
@@ -122,13 +122,13 @@ final class SliderVisuals {
         case .pending:
             root.isEnabled = popIn > 0
             NoteVisuals.setOpacity(root, popIn)
-            knob.isEnabled = false
+            knob.scale = .zero
             // Before the pinch: the slider's time budget.
             timer.set(Self.seconds(note.slider?.durationMs ?? 0), color: .white)
         case .holding:
             root.isEnabled = true
             NoteVisuals.setOpacity(root, 1)
-            knob.isEnabled = true
+            knob.scale = .one
             if let progress {
                 place(knob, at: progress.knobPoint, extraLift: 0.002)
                 knob.model?.materials = [progress.onTrack ? Self.onTrackMaterial : Self.lostMaterial]
@@ -142,7 +142,7 @@ final class SliderVisuals {
             let t = Float(min(max((shown - tuning.sliderResultDisplayMs) / 300, 0), 1))
             root.isEnabled = t < 1
             NoteVisuals.setOpacity(root, 1 - t)
-            knob.isEnabled = false
+            knob.scale = .zero
             if let result {
                 let text = result.finishDeltaMs.map { Self.seconds($0, signed: true) } ?? "miss"
                 timer.set(text, color: TimerLabel.color(for: result.judgment))
@@ -160,8 +160,11 @@ final class SliderVisuals {
 /// Short text that can change every frame. Each character slot holds one pre-built entity per
 /// possible character, and `set` only toggles which one is visible. (Swapping a mesh on an entity made
 /// that character vanish for a frame or two, so a digit changing every frame never showed; seen in the
-/// simulator.) Monospaced and billboarded, on a dark rounded plate so it reads over bright rooms and
-/// the glass rim.
+/// simulator.) Hidden glyphs are scaled to zero rather than disabled: an entity enabled for the first
+/// time didn't draw for a few frames in the simulator, so each digit blanked the first time it came up
+/// (e.g. "0. 9" just after the head was hit). Scaled-out glyphs are already in the scene from the
+/// slider's pop-up. Monospaced and billboarded, on a dark rounded plate so it reads over bright rooms
+/// and the glass rim.
 @MainActor
 final class TimerLabel {
     static let green = UIColor(red: 0.4, green: 1, blue: 0.5, alpha: 1)
@@ -205,7 +208,7 @@ final class TimerLabel {
             var slot: [Character: ModelEntity] = [:]
             for c in Self.charset {
                 let e = ModelEntity(mesh: Self.mesh(for: c, fontSize: fontSize), materials: [material])
-                e.isEnabled = false
+                e.scale = .zero
                 root.addChild(e)
                 slot[c] = e
             }
@@ -225,8 +228,8 @@ final class TimerLabel {
         for i in slots.indices {
             let wanted = i < chars.count ? slots[i][chars[i]] : nil
             if visible[i] !== wanted {
-                visible[i]?.isEnabled = false
-                wanted?.isEnabled = true
+                visible[i]?.scale = .zero
+                wanted?.scale = .one
                 visible[i] = wanted
             }
             wanted?.position = [Float(i) * advance - width / 2, baseline, 0]
