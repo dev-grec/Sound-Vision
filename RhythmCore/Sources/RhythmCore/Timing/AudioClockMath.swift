@@ -30,13 +30,19 @@ public enum AudioClockMath {
 
 /// Keeps a clock reading from going backward, and counts how often it had to (a health check: with
 /// correct interpolation, backward steps should be rare and tiny).
+///
+/// Right after the audio starts, the interpolated position is briefly negative (the first buffers are
+/// still queued; about 30 ms in the simulator). Those readings are held at `startMs` but not counted:
+/// they are the pre-roll, not the clock stepping back.
 public struct MonotonicReading: Sendable, Equatable {
     public private(set) var lastMs: Double
-    /// Readings that came out earlier than the previous one and were held.
+    /// Readings that came out earlier than the previous one and were held (pre-roll excluded).
     public private(set) var backwardCount = 0
     /// The largest backward step that was held, in ms.
     public private(set) var maxBackwardMs = 0.0
     public private(set) var readCount = 0
+    /// Whether a reading has passed `startMs` yet.
+    private var started = false
 
     public init(startMs: Double = 0) {
         lastMs = startMs
@@ -46,9 +52,12 @@ public struct MonotonicReading: Sendable, Equatable {
     public mutating func accept(_ rawMs: Double) -> Double {
         readCount += 1
         if rawMs < lastMs {
-            backwardCount += 1
-            maxBackwardMs = max(maxBackwardMs, lastMs - rawMs)
+            if started {
+                backwardCount += 1
+                maxBackwardMs = max(maxBackwardMs, lastMs - rawMs)
+            }
         } else {
+            if rawMs > lastMs { started = true }
             lastMs = rawMs
         }
         return lastMs

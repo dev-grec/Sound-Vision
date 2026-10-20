@@ -105,4 +105,22 @@ import Testing
         #expect(m.maxBackwardMs == 2)
         #expect(m.readCount == 4)
     }
+
+    @Test func preRollBeforeTheStartIsHeldButNotCounted() {
+        // Seen in the simulator: for the first ~30 ms after start the interpolated position is negative
+        // (render position -10.7 ms, render timestamps ~20 ms ahead). That is the audio's pre-roll, held at
+        // the start, not a clock fault, so it must not show up in the health count.
+        var m = MonotonicReading()
+        #expect(m.accept(-32) == 0)
+        #expect(m.accept(-20) == 0)
+        #expect(m.accept(-4) == 0)
+        #expect(m.backwardCount == 0)
+        #expect(m.maxBackwardMs == 0)
+        // Once the clock has moved past the start, a step back counts.
+        #expect(m.accept(5) == 5)
+        #expect(m.accept(4) == 5)
+        #expect(m.backwardCount == 1)
+        #expect(m.maxBackwardMs == 1)
+        #expect(m.readCount == 5)
+    }
 }
