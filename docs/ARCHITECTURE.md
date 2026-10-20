@@ -68,7 +68,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 | `Audio/ClickTrackSynth` | Runtime metronome synthesis for `generatedClick` maps |
 | `Input/GestureInputSource` | Buffers entity-targeted gestures as `InputEvent`s stamped with the clock (drag events at their event time, D22). `GameTargetComponent` tags an entity with its note or stroke ID. |
 | `Scene/GameSceneController` | Per-frame bridge: clock → rotation → inputs → `GameSession` → note visuals, popups, HUD. No game rules live here. |
-| `Scene/GameView` | RealityView + HUD attachment (with the Exit button, since the launcher is hidden during play) + `SpatialTapGesture().targetedToAnyEntity()` |
+| `Scene/GameView` | RealityView + HUD attachment (with the Exit button, since the launcher is hidden during play) + `SpatialTapGesture().targetedToAnyEntity()` and a simultaneous `DragGesture(minimumDistance: 0).targetedToAnyEntity()` |
 | `Scene/GlassObject` | Glass variants A/B/C, the shells, the rotating `surfaceRoot`, sort layers (`setSide`) |
 | `Scene/SliderVisuals` | Slider track (edged lane), end ring, knob (follows the drag; orange when lost), countdown `TimerLabel` beside the slider on a dark plate; `DragCursor` shows where a drag projects |
 | `Scene/NoteVisuals` | Note entities (disc + rim + approach ring + collision + input target + hover), looks and their clock-driven animations (`showApproach`/`showHit`/`showMiss`); `JudgmentPopups` |
@@ -91,7 +91,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 
 The system does look-and-pinch hit testing; gaze is never read. Two gestures run together on the RealityView:
 - `SpatialTapGesture().targetedToAnyEntity()` → `GestureInputSource.tap(on:)` → `.tap(targetID, atMs)` on release.
-- `DragGesture(minimumDistance: 0).targetedToAnyEntity()` → `GestureInputSource.drag(on:point:)`/`dragEnded` → `.dragBegan` (press), `.dragChanged`, `.dragEnded`. `GameSceneController` converts the drag location into the placement entity and projects it onto the sphere as a view-space `SurfacePoint`.
+- `DragGesture(minimumDistance: 0).targetedToAnyEntity()` → `GestureInputSource.drag(on:point:)`/`dragEnded` → `.dragBegan` (press), `.dragChanged`, `.dragEnded`. `GameSceneController` maps the drag with `DragTracker` (the pinched entity's position in the placement frame plus the hand's movement in scene space since the pinch, DECISIONS D19) and projects it onto the sphere as a view-space `SurfacePoint`.
 
 The first of the two to reach `GameSession` judges a note, and the second is ignored as already judged. Drag samples move the held slider's knob (`SliderProgress`).
 

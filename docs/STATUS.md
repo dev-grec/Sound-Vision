@@ -12,7 +12,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 - **Docs**: CLAUDE.md, ARCHITECTURE, BEATMAP_FORMAT, DECISIONS, DEVICE_TEST_CHECKLIST, this file.
 - **Beatmap format v1**, with loader (version check first) and validator (format rules plus playability rules: zone placement, crowding, rotation speed, stroke rules).
 - **Test map** `Maps/test-metronome/beatmap.json`: 120 BPM, 30 bars, synthesized click, 34 view-fixed tap notes: an opening and a closing section at one note per 2 s (room for sliders), and streams in between (left to right, right to left, diagonals, a circle). 2 strokes (load, not playable yet). A rotation speed change at beat 64. No sliders written in; random ones are added at runtime.
-- **RhythmCore engine** with 143 unit tests: geometry, rotation schedule, playfield and play area, note approach (pop-up and ring), tap judging, sliders (model, session, validation, random generator), scoring and combo, GameSession (inputs, auto-miss, offset, delivery grace), input event-time stamping, audio clock math, scripted input and autoplay (including sliders), stroke path, follow scoring, reveal state.
+- **RhythmCore engine** with 145 unit tests: geometry, rotation schedule, playfield and play area, note approach (pop-up and ring), tap judging, sliders (model, session, validation, random generator), scoring and combo, GameSession (inputs, auto-miss, offset, delivery grace), input event-time stamping, audio clock math, scripted input and autoplay (including sliders), stroke path, follow scoring, reveal state.
 - **Audio master clock** (`AudioEngineClock`) and the runtime click synthesizer.
 - **Glass rendering prototype** (Glass Lab, variants A/B/C). Findings are in DECISIONS D10. C is the gameplay default.
 - **Tap-note gameplay** (DECISIONS D17, D18, D9): a slowly rotating glass sphere in front of the player. Notes pop up at fixed spots around its front (they don't move), and a shrinking ring closes on each note exactly on the beat. Look-and-pinch via `SpatialTapGesture` on entities. A pinch outside the window ends the note as a Miss shown as "Early"/"Late". Judgment popups, a HUD (with an orange AUTOPLAY badge when autoplay is on), and a result summary in the launcher. Autoplay plays the whole map through the same input protocol.
@@ -20,7 +20,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 
 ### Verified in the simulator
 
-- Build succeeds with no Swift warnings. All 125 tests pass.
+- Build succeeds with no Swift warnings (clean build, debug pass). All 145 tests pass.
 - Glass Lab A/B/C render as described in D10 (screenshots).
 - Full autoplay run of the test map (34 notes, with random sliders): 34/34 Perfect. The song ends 61.5 s after audio start (60 s plus a 1.5 s tail), which matches the audio clock.
 - A debug-build log compared each note's rendered position (RealityKit, relative to the placement entity) with RhythmCore's `Playfield.worldPosition`. They agree to about 1e-7 m.
@@ -28,11 +28,13 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 - Autoplay shifted 400 ms early (`-autoplayEarlyMs 400`): every pinch ends its note as a Miss with "Early" (log: `hit n01: miss, delta -400 ms`).
 - Sliders with autoplay: random layouts per play, all four directions, 0.5–1 s. Screenshots show the track, end marker, knob, and the timer counting down (0.57, then 0.15) and then showing the finish delta (−0.03, Perfect color). Full run (seed 1261861787, 5 sliders): 34/34 Perfect; slider finishes landed 16–66 ms before target.
 - Design pass (D21), screenshots: the launcher is gone during play and comes back with the result after the song (`-exitOnFinish YES`); notes, rings, slider lanes, the timer plate and popup shadows read clearly over the light simulator room; the countdown shows every digit. Full autoplay run (seed 3, 7 sliders): 34/34 Perfect.
+- Merged app (design pass D21 + latency pass D22), debug pass with autoplay: full run 34/34 Perfect (seed 3, 7 sliders), song ends 61.55 s after audio start with the hit tick on and with `-hitSoundVolume 0`; `-autoplayEarlyMs 400` gives 34 Early Misses (delta -400 ms) with "Early" popups; `-exitOnFinish YES` brings the launcher back with the result; the Glass Lab keeps the launcher; `-processInputOnArrival NO -inputEventTimestamps NO` runs clean. Simulator audio: IO buffer 2.7 ms granted (5 asked), output latency 0.1 ms; clock stats 0 held backward steps over a whole song (after the pre-roll fix). The slider timer shows every digit and the knob right after the head hit (after the scale-hiding fix).
 - **Owner, in the simulator: clicking works.** The log of the owner's session showed Perfect/Great/Good hits with deltas between -104 and +165 ms.
 
 ### Not verified anywhere yet
 
 - Anything on the Vision Pro (see DEVICE_TEST_CHECKLIST.md).
+- **Hand input since the latency pass (D22).** Event-time stamping (`drag began … (event time, N ms before callback)`), judging from the gesture callback, the hit tick on a real pinch, and the end-of-play `input stats` line have not run with real gestures anywhere: autoplay bypasses gestures, and the debug pass could not script clicks in the simulator. The owner clicking a few notes in the simulator and sending the log would cover the simulator side.
 - **Dragging a slider by hand with the relative DragTracker.** The owner's first hand test exposed the absolute-conversion bug (D19). The fix is unit-tested in RhythmCore (`DragTrackerTests`: a hidden anchor offset cancels out), but no one has dragged with it yet. Check the input log: "drag began … point lat,lon" should now match the head's position.
 - File-based audio (`"audio": {"file": ...}`). Implemented, but untested until real audio is supplied.
 
@@ -68,3 +70,15 @@ Simulator verification is scripted: `scripts/run-sim.sh -autostart game -autopla
 
 ### 2026-10-19, design pass (D21)
 Presentation only; no gameplay rule changed. The launcher window is dismissed while a game is open and reopened when the space closes (the HUD has Exit / Back to Menu), which fixes the known issue of the window showing through the glass. Notes got a white rim and the approach ring a dark outline; sliders a lane with white edges and a rimmed knob; the slider timer bigger digits on a dark plate, moved beside the slider (below horizontal ones, outside vertical ones) so it clears the track and popups; judgment popups a drop shadow, starting just above their note. New Tuning entries: `approachRingThicknessM`, `approachRingStartOpacity`, `noteHitFlashMs`, `noteMissFadeMs`, `sliderTimerFontSizeM`. New launch argument `-exitOnFinish YES`. All simulator-only; new items are on the device checklist.
+
+### 2026-10-19, debug pass (merged D21 + D22)
+Ran: clean build (no Swift warnings), 145 tests, and the merged app in the simulator with autoplay: full runs (seed 3, hit tick on and off), the early run, `-exitOnFinish YES`, Glass Lab B, the latency A/B switches, and screenshot bursts during sliders and Early misses. Results are under "Verified in the simulator".
+Found and fixed (each with a commit; the RhythmCore ones with a failing test first):
+- Clock health stat counted the start-up pre-roll (about 30 ms of negative readings while the first buffers are queued) as backward steps, so every run reported "5-6 held backward steps (max ~32 ms)" for a healthy clock. Not counted any more; 0 over a whole song now.
+- Slider timer digits and the knob were missing for a few frames when first shown (e.g. "0. 9" just after the head hit): an entity enabled for the first time didn't draw at once. Hidden glyphs and the knob are now scaled to zero instead of disabled (D20 note). The design pass had not reintroduced mesh swaps.
+- Hitting a slider head while another slider was still held dropped the held slider's end event (no popup, timer result or log).
+- Launcher: if the space closed before `openImmersiveSpace` returned, the window was still hidden afterwards, leaving no window and no space.
+- Docs: stale lines (test count, drag mapping in ARCHITECTURE, timer position in BEATMAP_FORMAT). The D21/D22 renumbering checked out: every D22 reference is the latency pass, every D21 one the design pass.
+Still unverified: everything on device; hand input through the new D22 gesture path (see "Not verified"); the HUD Exit button pressed by hand (only the scripted `-exitOnFinish` path was run).
+Left for the owner (not bugs, or not fixed here): a judgment popup can also miss its first frame or two (they are cloned on spawn; a pool would fix it); a slider whose head is missed keeps showing its duration on the timer while it fades, instead of "miss"; if a drag is cancelled without `onEnded`, `GestureInputSource` would stay in "dragging" and the next pinch would be judged by the tap release (not seen; worth watching in device logs).
+

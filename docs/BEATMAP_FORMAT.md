@@ -84,7 +84,7 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 
 ## Sliders
 
-A tap note can carry a `slider`: `{ "durationMs", "path": [view points] }`. The player pinches the note (the head) on the beat as usual, then drags the slider's knob along the track and must reach the end at the **target time**, `timeMs + durationMs`. The knob follows the player's drag (DECISIONS D20). A timer above the slider shows the time budget, counts down after the pinch, and reads 0.00 at the target.
+A tap note can carry a `slider`: `{ "durationMs", "path": [view points] }`. The player pinches the note (the head) on the beat as usual, then drags the slider's knob along the track and must reach the end at the **target time**, `timeMs + durationMs`. The knob follows the player's drag (DECISIONS D20). A timer beside the slider (DECISIONS D21) shows the time budget, counts down after the pinch, and reads 0.00 at the target.
 
 - `path` lists the points after the head, in view coordinates like `at`. A straight slider has one point, its end. More points make a bent path (great-circle arcs between them). Curves may come later.
 - Scoring: the head is judged like a tap; a head Miss (Early/Late) ends the slider. The knob follows the drag while it's within `Tuning.sliderGrabRadiusDeg` (15°) of the track, and never moves backward. The slider finishes when the knob is within `sliderEndToleranceDeg` (1.5°) of the end. The finish time is judged against the target with slider windows (Perfect ±100 ms, Great ±180, Good ±260). Finishing earlier is "Early" (a Miss). Not finishing by the end of the Good window, or letting go before the end, is a Miss. The slider's judgment is the worse of the head and the finish, and it counts once in the score.

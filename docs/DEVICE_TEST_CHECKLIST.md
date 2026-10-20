@@ -47,6 +47,7 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] The timer beside the slider (below horizontal, outside vertical ones; 3 cm digits on a dark plate) is readable, easy to glance at while dragging, and useful as a pacing cue (placeholder UI; DECISIONS D20, D21). Does a timer outside the sphere's silhouette feel detached?
 - [ ] Hand travel: a 45° slider on a 0.3 m sphere is about 24 cm of arc. Comfortable over 0.5–2 s?
 - [ ] Slider speed limit (75°/s), random lengths (20–45°) and durations (1–2 beats).
+- [ ] The timer's digits and the knob show at once when the head is hit (no blank digit or missing knob for a moment; fixed in the simulator in the debug pass).
 - [ ] Track (lane with white edges), end ring and knob are readable; the lost color (orange) is noticeable.
 - [ ] Simultaneous tap and drag gestures don't interfere: plain notes still register reliably.
 
@@ -64,7 +65,7 @@ Read the log with `log stream --predicate 'subsystem == "com.devgrec.SoundVision
 - [ ] **Event-time stamping works.** "drag began … (event time, N ms before callback)": N should be small and steady (a few ms to a few tens of ms). "event time too old" or "in the future" means `DragGesture.Value.time` isn't usable on device; then set `useInputEventTimestamps` false and note it in D22. The end-of-play "input stats" line summarizes presses, mean and max backdating, and fallbacks.
 - [ ] **Timing jitter A/B.** Play the same section twice, once plain and once launched with `-inputEventTimestamps NO`, pinching on the beat. Compare the spread of "delta" values in the hit lines. Event-time stamping should give a tighter spread; if not, say so in D22.
 - [ ] **Audio session.** The "audio started" line shows the granted IO buffer (5 ms asked) and output latency. Note both here. Any crackle with the smaller buffer?
-- [ ] **Clock health.** The "clock stats" line at the end: held backward steps should be rare and tiny (well under 1 ms). Many or large ones mean the render timestamp's host time doesn't mean what D2 assumes.
+- [ ] **Clock health.** The "clock stats" line at the end: held backward steps should be rare and tiny (well under 1 ms); the start-up pre-roll is not counted (debug pass). The simulator showed 0 over a whole song. Many or large ones mean the render timestamp's host time doesn't mean what D2 assumes.
 - [ ] **Hit tick.** It sounds at the pinch, is distinct from the metronome, and doesn't feel late. Does it help or distract? Volume (`hitSoundVolume` 0.35; `-hitSoundVolume 0` turns it off).
 - [ ] **Feel A/B for judging on arrival.** Compare with `-processInputOnArrival NO`. Expect little visible difference; the tick may feel a touch quicker with it on.
 - [ ] **Delivery grace.** An unhit note now turns Miss 50 ms after its window (`inputDeliveryGraceMs`). Not noticeable? Late-but-in-window pinches no longer get lost?
