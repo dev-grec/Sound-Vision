@@ -86,8 +86,9 @@ struct LauncherView: View {
             // ImmersiveRootView sets .open when it appears. In a game, hide this window so it doesn't sit
             // behind the sphere and show through the glass; ImmersiveRootView reopens it when the space
             // closes, and the HUD has the Exit button meanwhile. The Glass Lab keeps the window for its
-            // variant picker.
-            if mode == .game {
+            // variant picker. If the space already closed again (Exit, or the system) before this await
+            // returned, its onDisappear has run and won't reopen the window, so don't hide it.
+            if mode == .game, model.spaceState != .closed {
                 model.launcherHidden = true
                 dismissWindow(id: AppModel.launcherWindowID)
             }
