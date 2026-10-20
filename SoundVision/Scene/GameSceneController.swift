@@ -138,9 +138,16 @@ final class GameSceneController {
 
     private func spawnPopup(_ kind: JudgmentPopups.Kind, forNote id: String, session: GameSession, now: Double) {
         guard let note = session.notes.first(where: { $0.id == id }) else { return }
-        let pos = session.playfield.viewPosition(of: note.at)
-        // Toward the player (not along the surface normal), so text near the edge stays in front of the glass.
-        popups.spawn(kind, at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
+        popups.spawn(kind, at: popupPosition(note.at, session: session), nowMs: now)
+    }
+
+    /// Where a judgment popup starts for a note at `point`: toward the player (not along the surface normal),
+    /// so text near the edge stays in front of the glass, and just above the note, so the text never covers
+    /// the note's own hit or miss flash.
+    private func popupPosition(_ point: SurfacePoint, session: GameSession) -> SIMD3<Float> {
+        let pos = session.playfield.viewPosition(of: point)
+        let above = session.tuning.noteDiameterM / 2 + 0.015
+        return SIMD3<Float>(pos + Playfield.front * 0.08 + SIMD3<Double>(0, above, 0))
     }
 
     func applyVariant(_ variant: GlassVariant) {
@@ -234,8 +241,7 @@ final class GameSceneController {
                     if let end = note.sliderPath?.points.last {
                         // Finished too early → "Early"; otherwise the judgment (Miss if it never got there).
                         let kind: JudgmentPopups.Kind = (judgment == .miss && (finishDelta ?? 0) < 0) ? .early : .judgment(judgment)
-                        let pos = session.playfield.viewPosition(of: end)
-                        popups.spawn(kind, at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
+                        popups.spawn(kind, at: popupPosition(end, session: session), nowMs: now)
                     }
                 }
                 log.info("slider \(id, privacy: .public) ended: \(judgment.rawValue, privacy: .public), finish \(finishDelta.map { "\(Int($0)) ms" } ?? "none", privacy: .public), combo \(combo)")
@@ -270,15 +276,9 @@ final class GameSceneController {
                 let approach = session.approaches[i]
                 let pop = Float(min(max((judgedNow - approach.appearMs) / tuning.noteFadeInMs, 0), 1))
                 NoteVisuals.setTargetable(entity, true)
-                NoteVisuals.setLook(entity, .hittable)
-                NoteVisuals.setOpacity(entity, pop)
-                entity.scale = SIMD3(repeating: 0.6 + 0.4 * pop)
-                if let ring = approachRings[i] {
-                    if !ring.isEnabled { ring.isEnabled = true }
-                    let s = Float(approach.ringScale(atMs: judgedNow, tuning: tuning))
-                    ring.scale = [s, 1, s]
-                    NoteVisuals.setOpacity(ring, 0.35 + 0.65 * Float(approach.progress(atMs: judgedNow)))
-                }
+                NoteVisuals.showApproach(entity, ring: approachRings[i], pop: pop,
+                                         ringScale: Float(approach.ringScale(atMs: judgedNow, tuning: tuning)),
+                                         ringProgress: Float(approach.progress(atMs: judgedNow)), tuning: tuning)
             case .holding:
                 // The slider ball takes over from the head.
                 approachRings[i]?.isEnabled = false
@@ -287,16 +287,11 @@ final class GameSceneController {
             case .hit(_, _, let atMs):
                 approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
-                NoteVisuals.setLook(entity, .hit)
-                let t = Float(min(max((now - atMs) / 250, 0), 1))
-                entity.scale = SIMD3(repeating: 1 + 0.6 * t)
-                NoteVisuals.setOpacity(entity, 1 - t)
+                NoteVisuals.showHit(entity, t: Float(min(max((now - atMs) / tuning.noteHitFlashMs, 0), 1)))
             case .missed(let atMs, _):
                 approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
-                NoteVisuals.setLook(entity, .missed)
-                let t = Float(min(max((now - atMs) / 500, 0), 1))
-                NoteVisuals.setOpacity(entity, 0.8 * (1 - t))
+                NoteVisuals.showMiss(entity, t: Float(min(max((now - atMs) / tuning.noteMissFadeMs, 0), 1)))
             }
         }
     }

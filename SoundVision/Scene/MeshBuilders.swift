@@ -47,8 +47,10 @@ enum MeshBuilders {
 
     /// A flat ribbon lying on a sphere's surface along `directions` (unit vectors from the center),
     /// lifted `lift` meters above a sphere of `radius`. `closed` joins the last point to the first.
+    /// `sideOffset` shifts the ribbon sideways (positive = left of travel, seen from outside), for edge lines.
     /// Render it with `faceCulling = .none`: far-side ribbons are seen from behind, through the glass.
-    static func surfaceRibbon(directions: [SIMD3<Float>], radius: Float, lift: Float, width: Float, closed: Bool = false) throws -> MeshResource {
+    static func surfaceRibbon(directions: [SIMD3<Float>], radius: Float, lift: Float, width: Float,
+                              sideOffset: Float = 0, closed: Bool = false) throws -> MeshResource {
         let pts = closed ? directions + [directions[0]] : directions
         precondition(pts.count >= 2, "a ribbon needs at least two points")
         var positions: [SIMD3<Float>] = []
@@ -63,7 +65,7 @@ enum MeshBuilders {
             // Tangent projected onto the surface; side vector points to the left of travel, seen from outside.
             t = simd_normalize(t - simd_dot(t, n) * n)
             let side = simd_normalize(simd_cross(n, t))
-            let center = n * (radius + lift)
+            let center = n * (radius + lift) + side * sideOffset
             positions.append(center - side * width / 2) // right edge
             positions.append(center + side * width / 2) // left edge
             normals += [n, n]

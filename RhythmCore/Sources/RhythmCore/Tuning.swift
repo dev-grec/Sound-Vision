@@ -41,6 +41,11 @@ public struct Tuning: Codable, Sendable, Equatable {
     public var approachRingStartScale: Double = 3
     /// Pop-up animation time (fade and grow in), in ms.
     public var noteFadeInMs: Double = 200
+    /// Width of the approach ring's white band at its closed size, in meters (it scales with the ring,
+    /// so it starts `approachRingStartScale` times wider). It has a thin dark outline for contrast. [device]
+    public var approachRingThicknessM: Double = 0.004
+    /// Approach ring opacity when the note pops up; it rises to 1 as the ring closes. [device]
+    public var approachRingStartOpacity: Double = 0.45
 
     // MARK: Note size and spacing
 
@@ -124,6 +129,12 @@ public struct Tuning: Codable, Sendable, Equatable {
 
     /// How long a judgment popup stays visible, in ms.
     public var judgmentPopupMs: Double = 700
+    /// A hit note flashes gold, grows and fades over this long, in ms.
+    public var noteHitFlashMs: Double = 250
+    /// A missed note turns red, shrinks a little and fades over this long, in ms.
+    public var noteMissFadeMs: Double = 500
+    /// Character height of the slider timer, in meters (font size; about 1.6° at the sphere's 1.1 m). [device]
+    public var sliderTimerFontSizeM: Double = 0.03
 
     public init() {}
 
