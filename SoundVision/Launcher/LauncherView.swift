@@ -41,6 +41,8 @@ struct LauncherView: View {
                 Section("Settings") {
                     Toggle("Autoplay (scripted perfect input)", isOn: $model.autoplay)
                         .disabled(model.spaceState != .closed)
+                    Toggle("Random sliders (development)", isOn: $model.randomSliders)
+                        .disabled(model.spaceState != .closed)
                     VStack(alignment: .leading) {
                         Text("Input offset: \(Int(model.tuning.inputOffsetMs)) ms")
                             .monospacedDigit()

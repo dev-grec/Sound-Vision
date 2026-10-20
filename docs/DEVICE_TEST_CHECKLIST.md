@@ -38,6 +38,15 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] Input offset: find the value at which on-beat pinches score Perfect, and record it here as a starting default.
 - [ ] Play area (45° from front): notes pop up within comfortable eye range, not too far to the sides.
 
+## Sliders
+
+- [ ] **Drag mapping:** the white drag dot follows the hand where expected, so drags land on the slider. The placement entity sits under a head `AnchorEntity`, whose transform is hidden from apps, and the conversion may be wrong (DECISIONS D19). Check the input log's "drag began … point lat,lon" against the head's position.
+- [ ] Follow tolerance (`sliderFollowToleranceDeg` 8°, falloff 20°): fair for hand dragging in the air?
+- [ ] Hand travel: a 45° slider on a 0.3 m sphere is about 24 cm of arc. Comfortable over 0.5–2 s?
+- [ ] Slider speed limit (60°/s) and random lengths (20–45°) and durations (1–4 beats).
+- [ ] Track, end marker, ball and follow ring are readable; the drifting color (orange) is noticeable.
+- [ ] Simultaneous tap and drag gestures don't interfere: plain notes still register reliably.
+
 ## Audio and timing
 
 - [ ] Click track plays with no crackle, and accents land on beat 1.

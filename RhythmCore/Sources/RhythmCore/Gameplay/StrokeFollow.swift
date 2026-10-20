@@ -46,62 +46,89 @@ public struct StrokePath: Sendable, Equatable {
     }
 }
 
-/// Scores how closely a drag follows a stroke's moving guide.
+/// Scores how closely a drag follows a moving guide along a path (a stroke's guide or a slider's ball).
 ///
-/// The stroke's duration is split into `tuning.strokeScoreBuckets` equal time buckets. Each drag
-/// sample earns credit by its angular distance from where the guide was at that moment: full credit
-/// within `followToleranceDeg`, falling linearly to zero at `followFalloffDeg`. A bucket scores the
-/// mean credit of its samples; an empty bucket scores zero. The follow score is the mean over buckets,
-/// so it doesn't depend on the drag event rate, and letting go early costs exactly the missing part.
+/// The guide's duration is split into `buckets` equal time buckets. Each drag sample earns credit by its
+/// angular distance from where the guide was at that moment: full credit within `toleranceDeg`, falling
+/// linearly to zero at `falloffDeg`. A bucket scores the mean credit of its samples; an empty bucket
+/// scores zero. The follow score is the mean over buckets, so it doesn't depend on the drag event rate,
+/// and letting go early costs exactly the missing part.
 ///
-/// Samples must already be projected onto the surface in object-local (rotating) coordinates.
+/// Samples must be in the same coordinates as the path (object-local for strokes, view for sliders).
 /// Times are raw clock times; the input offset is removed here.
-public struct StrokeFollowScorer: Sendable {
-    public let stroke: Stroke
+public struct PathFollowScorer: Sendable {
     public let path: StrokePath
-    public let tuning: Tuning
+    public let startMs: Double
+    public let durationMs: Double
+    public let toleranceDeg: Double
+    public let falloffDeg: Double
+    public let inputOffsetMs: Double
     private var bucketSums: [Double]
     private var bucketCounts: [Int]
+    /// Credit of the most recent sample (for live feedback), nil before any sample.
+    public private(set) var lastCredit: Double?
 
-    public init(stroke: Stroke, tuning: Tuning) {
-        self.stroke = stroke
-        self.path = StrokePath(points: stroke.path)
-        self.tuning = tuning
-        let n = max(tuning.strokeScoreBuckets, 1)
+    public init(path: StrokePath, startMs: Double, durationMs: Double, toleranceDeg: Double, falloffDeg: Double,
+                buckets: Int, inputOffsetMs: Double) {
+        self.path = path
+        self.startMs = startMs
+        self.durationMs = durationMs
+        self.toleranceDeg = toleranceDeg
+        self.falloffDeg = falloffDeg
+        self.inputOffsetMs = inputOffsetMs
+        let n = max(buckets, 1)
         bucketSums = Array(repeating: 0, count: n)
         bucketCounts = Array(repeating: 0, count: n)
     }
 
-    /// Where the guide is at (judged) time `ms`: the start point before the stroke, the end point after.
+    /// A stroke's guide, with the stroke tolerances.
+    public init(stroke: Stroke, tuning: Tuning) {
+        self.init(path: StrokePath(points: stroke.path), startMs: stroke.startMs, durationMs: stroke.durationMs,
+                  toleranceDeg: tuning.followToleranceDeg, falloffDeg: tuning.followFalloffDeg,
+                  buckets: tuning.strokeScoreBuckets, inputOffsetMs: tuning.inputOffsetMs)
+    }
+
+    /// A slider's ball, with the slider tolerances. Nil if the note has no slider.
+    public init?(sliderOf note: TapNote, tuning: Tuning) {
+        guard let slider = note.slider, let path = note.sliderPath else { return nil }
+        self.init(path: path, startMs: note.timeMs, durationMs: slider.durationMs,
+                  toleranceDeg: tuning.sliderFollowToleranceDeg, falloffDeg: tuning.sliderFollowFalloffDeg,
+                  buckets: tuning.strokeScoreBuckets, inputOffsetMs: tuning.inputOffsetMs)
+    }
+
+    public var endMs: Double { startMs + durationMs }
+
+    /// Where the guide is at (judged) time `ms`: the start point before, the end point after.
     public func guidePoint(atMs ms: Double) -> SurfacePoint {
         path.point(atFraction: progress(atMs: ms))
     }
 
-    /// Fraction of the stroke's duration elapsed at (judged) time `ms`, clamped to 0...1.
+    /// Fraction of the duration elapsed at (judged) time `ms`, clamped to 0...1.
     public func progress(atMs ms: Double) -> Double {
-        guard stroke.durationMs > 0 else { return 1 }
-        return min(max((ms - stroke.startMs) / stroke.durationMs, 0), 1)
+        guard durationMs > 0 else { return 1 }
+        return min(max((ms - startMs) / durationMs, 0), 1)
     }
 
     /// Credit for one sample at a given angular error.
-    public static func credit(errorDeg: Double, tuning: Tuning) -> Double {
-        if errorDeg <= tuning.followToleranceDeg { return 1 }
-        if errorDeg >= tuning.followFalloffDeg { return 0 }
-        return 1 - (errorDeg - tuning.followToleranceDeg) / (tuning.followFalloffDeg - tuning.followToleranceDeg)
+    public static func credit(errorDeg: Double, toleranceDeg: Double, falloffDeg: Double) -> Double {
+        if errorDeg <= toleranceDeg { return 1 }
+        if errorDeg >= falloffDeg { return 0 }
+        return 1 - (errorDeg - toleranceDeg) / (falloffDeg - toleranceDeg)
     }
 
-    /// Adds one drag sample. Samples outside the stroke's time span are ignored.
+    /// Adds one drag sample. Samples outside the time span are ignored.
     /// Returns the sample's credit (or nil if ignored), for live feedback.
     @discardableResult
     public mutating func addSample(point: SurfacePoint, atMs rawMs: Double) -> Double? {
-        let ms = rawMs - tuning.inputOffsetMs
-        guard ms >= stroke.startMs, ms <= stroke.endMs, point.isFinite else { return nil }
+        let ms = rawMs - inputOffsetMs
+        guard ms >= startMs, ms <= endMs, point.isFinite else { return nil }
         let error = point.angularDistanceDeg(to: guidePoint(atMs: ms))
-        let c = Self.credit(errorDeg: error, tuning: tuning)
+        let c = Self.credit(errorDeg: error, toleranceDeg: toleranceDeg, falloffDeg: falloffDeg)
         let n = bucketSums.count
         let bucket = min(Int(progress(atMs: ms) * Double(n)), n - 1)
         bucketSums[bucket] += c
         bucketCounts[bucket] += 1
+        lastCredit = c
         return c
     }
 

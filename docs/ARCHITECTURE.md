@@ -17,7 +17,7 @@ Two modules: a pure-Swift engine that holds all game logic, and a visionOS app t
 ┌──────────────────────────── RhythmCore (Swift package) ────────────────────────────┐
 │ Beatmap (+Loader, Validator) · Tuning · SurfacePoint/SurfaceShape/Playfield         │
 │ BeatGrid · RotationSchedule · TapJudge · ScoreKeeper · GameSession                 │
-│ StrokePath · StrokeFollowScorer · RevealState · InputEvent/InputSource             │
+│ StrokePath · PathFollowScorer · RevealState · InputEvent/InputSource · RandomSliders│
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,7 +39,9 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 | `ScoreKeeper` | `Gameplay/ScoreKeeper.swift` | Score, combo, max combo, accuracy, counts |
 | `GameSession` | `Gameplay/GameSession.swift` | One play-through: `advance(nowMs:inputs:)` handles inputs, then auto-misses. Returns `Event`s (judged or ignored-with-reason). Per-note `approaches` and `hasAppeared` (D16, D17). Tap notes only in M0. |
 | `NoteApproach` | `Gameplay/NoteApproach.swift` | Pop-up time and approach-ring progress and scale for a target (D17) |
-| `StrokePath`, `StrokeFollowScorer`, `RevealState` | `Gameplay/StrokeFollow.swift` | M1 logic, already tested: guide position, bucketed follow score, reveal level and animation |
+| `StrokePath`, `PathFollowScorer`, `RevealState` | `Gameplay/StrokeFollow.swift` | Path interpolation; bucketed follow scoring for slider balls and stroke guides (separate tolerances); stroke reveal level and animation |
+| `Slider`, `CardinalDirection` | `Beatmap/Beatmap.swift` | A tap note's optional slider (duration + view-space path); `TapNote.sliderBallPoint` |
+| `RandomSliders`, `SeededRandom` | `Beatmap/RandomSliders.swift` | Development: seeded random cardinal sliders that keep the map valid (DECISIONS D19) |
 | `InputEvent`, `InputSource`, `ScriptedInputSource` | `Input/InputEvent.swift` | Device-independent input; scripted source for tests and autoplay |
 
 ### Frames and conventions
@@ -47,7 +49,7 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 - **Object-local frame**: rotates with the object. Stroke paths live here.
 - **Placement frame**: non-rotating, centered on the object. +X right, +Y up, +Z toward the player. `Playfield.front = +Z`. Tap note positions live here (view-fixed).
 - `orientation(atMs:)` maps object-local to placement. The app sets `surfaceRoot.orientation` to it every frame.
-- All times are master-clock ms (audio position). Inputs carry raw clock time; only `TapJudge`/`StrokeFollowScorer`/`GameSession` subtract `Tuning.inputOffsetMs`.
+- All times are master-clock ms (audio position). Inputs carry raw clock time; only `TapJudge`/`PathFollowScorer`/`GameSession` subtract `Tuning.inputOffsetMs`.
 
 ## SoundVision app (`SoundVision/`)
 
@@ -63,6 +65,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 | `Scene/GameSceneController` | Per-frame bridge: clock → rotation → inputs → `GameSession` → note visuals, popups, HUD. No game rules live here. |
 | `Scene/GameView` | RealityView + HUD attachment + `SpatialTapGesture().targetedToAnyEntity()` |
 | `Scene/GlassObject` | Glass variants A/B/C, the shells, the rotating `surfaceRoot`, sort layers (`setSide`) |
+| `Scene/SliderVisuals` | Slider track, end marker, ball and follow ring (orange when drifting); `DragCursor` shows where a drag projects |
 | `Scene/NoteVisuals` | Note entities (disc + collision + input target + hover) and looks; `JudgmentPopups` |
 | `Scene/PlacementRig` | Head anchor (`.once`) → placement entity 1.1 m ahead, slightly low |
 | `Scene/MeshBuilders`, `SceneMath` | Procedural meshes (fresnel-UV sphere, surface ribbons, approach-ring annulus); Double↔Float conversions |
@@ -79,7 +82,11 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 
 ### Input path
 
-The system does look-and-pinch hit testing. `SpatialTapGesture` targeted to an entity with Collision + InputTarget runs `GestureInputSource.tap(on:)`, which records `.tap(targetID, atMs: clock.nowMs)`. The next frame, `GameSession` checks the zone and the timing window. Gaze is never read. Stroke drags (M1) will add `DragGesture().targetedToAnyEntity()`, which converts the location into the rotating `surfaceRoot` space (`value.convert(_:from:to:)`) and projects it with `Playfield.surfacePoint(fromObjectLocal:)`.
+The system does look-and-pinch hit testing; gaze is never read. Two gestures run together on the RealityView:
+- `SpatialTapGesture().targetedToAnyEntity()` → `GestureInputSource.tap(on:)` → `.tap(targetID, atMs)` on release.
+- `DragGesture(minimumDistance: 0).targetedToAnyEntity()` → `GestureInputSource.drag(on:point:)`/`dragEnded` → `.dragBegan` (press), `.dragChanged`, `.dragEnded`. `GameSceneController` converts the drag location into the placement entity and projects it onto the sphere as a view-space `SurfacePoint`.
+
+The first of the two to reach `GameSession` judges a note, and the second is ignored as already judged. Slider follow samples come from the drag. Events are stamped with the audio clock on arrival and processed on the next frame.
 
 ## Build system
 

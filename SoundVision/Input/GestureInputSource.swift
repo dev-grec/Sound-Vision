@@ -30,6 +30,32 @@ final class GestureInputSource: @MainActor InputSource {
         pending.append(event)
     }
 
+    /// Whether a drag (pinch-and-hold) is in progress.
+    private(set) var isDragging = false
+
+    /// A DragGesture update. The first call of a drag is the pinch press on `entity`; later calls are
+    /// movement. `point` is the drag location already projected onto the sphere in view coordinates.
+    func drag(on entity: Entity, point: SurfacePoint?) {
+        let now = clock.nowMs
+        if !isDragging {
+            isDragging = true
+            let event = InputEvent.dragBegan(targetID: Self.targetID(of: entity), point: point, atMs: now)
+            log.info("drag began on \(entity.name, privacy: .public) at \(Int(now)) ms, point \(point.map { "\(Int($0.lat)),\(Int($0.lon))" } ?? "none", privacy: .public)")
+            pending.append(event)
+        } else {
+            pending.append(.dragChanged(point: point, atMs: now))
+        }
+    }
+
+    /// The DragGesture ended (pinch released).
+    func dragEnded(point: SurfacePoint?) {
+        guard isDragging else { return }
+        isDragging = false
+        let now = clock.nowMs
+        log.info("drag ended at \(Int(now)) ms, point \(point.map { "\(Int($0.lat)),\(Int($0.lon))" } ?? "none", privacy: .public)")
+        pending.append(.dragEnded(point: point, atMs: now))
+    }
+
     func pollEvents(nowMs: Double) -> [InputEvent] {
         defer { pending.removeAll() }
         return pending

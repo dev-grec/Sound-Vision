@@ -159,12 +159,6 @@ import Testing
         #expect(events == [.judged(noteID: "n1", judgment: .perfect, deltaMs: 0, combo: 1)])
     }
 
-    @Test func dragsAreNotPlayedYet() {
-        var s = makeSession([Fixtures.note("n1", atMs: 4000)])
-        let events = s.handle(.dragBegan(targetID: "s1", point: nil, atMs: 4000))
-        #expect(events == [.ignored(targetID: "s1", reason: .unsupportedInput)])
-    }
-
     @Test func finishesAfterLastNoteAndSongEnd() {
         let map = Fixtures.map(notes: [Fixtures.note("n1", atMs: 4000)], bars: 4) // song is 8000 ms
         var s = GameSession(beatmap: map, tuning: tuning)

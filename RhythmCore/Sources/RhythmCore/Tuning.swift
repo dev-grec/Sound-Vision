@@ -80,6 +80,31 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Duration of the color-fill animation when a stroke completes, in ms. [device]
     public var revealAnimationMs: Double = 600
 
+    // MARK: Sliders (a tap note with a path: pinch the head on the beat, hold, drag along the path)
+
+    /// Drag samples within this angle of the slider ball earn full credit. [device]
+    public var sliderFollowToleranceDeg: Double = 8
+    /// Credit falls linearly to zero at this angle from the ball. [device]
+    public var sliderFollowFalloffDeg: Double = 20
+    /// Follow score at or above which the slider keeps its head judgment.
+    public var sliderKeepJudgmentScore: Double = 0.8
+    /// Follow score at or above which the slider drops one tier (Perfect → Great → Good).
+    /// Below it the slider breaks: Miss.
+    public var sliderBreakScore: Double = 0.5
+    /// Validator: the slider ball may not move faster than this. [device]
+    public var maxSliderSpeedDegPerSec: Double = 60
+
+    // MARK: Random sliders (development only, until levels are designed)
+
+    /// Chance that a note with room after it gets a random slider.
+    public var randomSliderChance: Double = 0.5
+    /// Random slider length range, in degrees of view.
+    public var randomSliderLengthDeg: ClosedRange<Double> = 20...45
+    /// Random slider durations to choose from, in beats.
+    public var randomSliderBeats: [Double] = [1, 2, 3, 4]
+    /// A random slider must end at least this many beats before the next note's hit time.
+    public var randomSliderGapBeats: Double = 1
+
     // MARK: Scoring
 
     public var scorePerfect: Int = 300

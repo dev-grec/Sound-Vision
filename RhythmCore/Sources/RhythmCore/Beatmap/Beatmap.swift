@@ -169,11 +169,66 @@ public struct TapNote: Codable, Sendable, Equatable, Identifiable {
     /// player, +lon is to the player's right, +lat is up. Fixed: tap notes do not ride the rotation
     /// (owner's design, DECISIONS D18). Strokes, by contrast, are drawn on the rotating surface.
     public var at: SurfacePoint
+    /// Optional slider: after pinching this note on the beat, hold and drag along `slider.path`.
+    public var slider: Slider?
 
-    public init(id: String, timeMs: Double, at: SurfacePoint) {
+    public init(id: String, timeMs: Double, at: SurfacePoint, slider: Slider? = nil) {
         self.id = id
         self.timeMs = timeMs
         self.at = at
+        self.slider = slider
+    }
+
+    /// When the note is finished: its hit time, or the end of its slider.
+    public var endMs: Double { timeMs + (slider?.durationMs ?? 0) }
+
+    /// The slider's full path in view coordinates, starting at the head (`at`). Nil for a plain note.
+    public var sliderPath: StrokePath? {
+        slider.map { StrokePath(points: [at] + $0.path) }
+    }
+
+    /// Where the slider ball is at (judged) time `ms`: at the head until the hit time, then moving
+    /// along the path at constant speed, at the end afterward. Nil for a plain note.
+    public func sliderBallPoint(atMs ms: Double) -> SurfacePoint? {
+        guard let slider, let path = sliderPath else { return nil }
+        let f = slider.durationMs > 0 ? (ms - timeMs) / slider.durationMs : 1
+        return path.point(atFraction: f)
+    }
+}
+
+/// A slider attached to a tap note. The ball leaves the note's position at its hit time and travels
+/// the path (great-circle arcs, view coordinates) at constant speed over `durationMs`.
+public struct Slider: Codable, Sendable, Equatable {
+    public var durationMs: Double
+    /// Points after the head, in view coordinates. A straight slider has one point: its end.
+    public var path: [SurfacePoint]
+
+    public init(durationMs: Double, path: [SurfacePoint]) {
+        self.durationMs = durationMs
+        self.path = path
+    }
+
+    /// A straight slider from `head` in a cardinal direction of the player's view.
+    public static func cardinal(from head: SurfacePoint, direction: CardinalDirection,
+                                lengthDeg: Double, durationMs: Double) -> Slider {
+        let d = direction.delta
+        return Slider(durationMs: durationMs,
+                      path: [SurfacePoint(lat: head.lat + d.lat * lengthDeg, lon: head.lon + d.lon * lengthDeg)])
+    }
+}
+
+/// Up, down, left or right in the player's view.
+public enum CardinalDirection: String, Codable, Sendable, CaseIterable {
+    case up, down, left, right
+
+    /// Unit step in (lat, lon) degrees.
+    public var delta: (lat: Double, lon: Double) {
+        switch self {
+        case .up: (1, 0)
+        case .down: (-1, 0)
+        case .left: (0, -1)
+        case .right: (0, 1)
+        }
     }
 }
 

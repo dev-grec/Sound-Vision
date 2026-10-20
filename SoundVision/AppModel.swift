@@ -28,6 +28,11 @@ final class AppModel {
     /// Launch argument only: -autoplayEarlyMs 400 (negative values can't be passed as launch arguments).
     var autoplayEarlyMs: Double = 0
     var glassVariant: GlassVariant = .defaultForGameplay
+    /// Development: attach random cardinal sliders to the map's notes each play (RhythmCore RandomSliders),
+    /// until levels are designed by hand.
+    var randomSliders = true
+    /// Fixed random-slider seed (launch argument -sliderSeed N) to replay a layout; nil = new seed each play.
+    var sliderSeed: UInt64?
 
     let library = MapLibrary.loadBundled()
     var selectedMap: MapLibrary.Entry? { library.entries.first }
@@ -42,6 +47,8 @@ final class AppModel {
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: "autoplay") { autoplay = true }
         autoplayEarlyMs = defaults.double(forKey: "autoplayEarlyMs")
+        if defaults.object(forKey: "randomSliders") != nil { randomSliders = defaults.bool(forKey: "randomSliders") }
+        if let seed = defaults.string(forKey: "sliderSeed"), let value = UInt64(seed) { sliderSeed = value }
         if let v = defaults.string(forKey: "glassVariant"), let variant = GlassVariant(rawValue: v) {
             glassVariant = variant
         }

@@ -104,6 +104,27 @@ public enum BeatmapValidator {
                       "is \(fmt(angle))° from front; the play area is ±\(fmt(tuning.hitZoneHalfAngleDeg))°",
                       note.id)
             }
+            if let slider = note.slider {
+                guard slider.durationMs.isFinite, slider.durationMs > 0 else {
+                    error("slider.duration", "slider durationMs must be positive", note.id); continue
+                }
+                guard !slider.path.isEmpty, slider.path.allSatisfy({ $0.isFinite && abs($0.lat) <= 90 }) else {
+                    error("slider.path", "slider path needs at least one finite point with lat between -90 and 90", note.id); continue
+                }
+                // The play area is a spherical cap smaller than a hemisphere, so great-circle arcs between
+                // points inside it stay inside: checking the points is enough.
+                if let worst = slider.path.map({ playfield.viewAngleFromFrontDeg(of: $0) }).max(), worst > tuning.hitZoneHalfAngleDeg {
+                    error("slider.outsideZone", "slider path reaches \(fmt(worst))° from front", note.id)
+                }
+                if let path = note.sliderPath {
+                    let speed = path.totalAngleDeg / (slider.durationMs / 1000)
+                    if speed > tuning.maxSliderSpeedDegPerSec {
+                        error("slider.tooFast", "slider ball moves \(fmt(speed))°/s; the limit is \(fmt(tuning.maxSliderSpeedDegPerSec))°/s", note.id)
+                    }
+                    if path.longestSegmentDeg >= 170 { error("slider.segmentTooLong", "a slider segment spans 170° or more", note.id) }
+                }
+                if let d = durationMs, note.endMs > d { error("slider.afterEnd", "slider ends after the song ends (\(fmt(d)) ms)", note.id) }
+            }
         }
 
         // Strokes
@@ -127,7 +148,7 @@ public enum BeatmapValidator {
                 error("stroke.startOutsideZone", "start point reaches \(fmt(startAngle))° from front between its pop-up and startMs", stroke.id)
             }
             // The guide should stay in the play area for the whole stroke.
-            let scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+            let scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
             let worst = (0...20).map { i -> Double in
                 let t = stroke.startMs + stroke.durationMs * Double(i) / 20
                 return playfield.angleFromFrontDeg(of: scorer.guidePoint(atMs: t), atMs: t)
@@ -147,22 +168,41 @@ public enum BeatmapValidator {
                 warning("note.duringStroke", "falls during stroke \(s.id); the player is busy dragging", note.id)
             }
         }
+        // One drag at a time: sliders may not overlap each other or strokes; notes during a slider are discouraged.
+        let sliders = map.notes.filter { $0.slider != nil && $0.endMs.isFinite }.sorted { $0.timeMs < $1.timeMs }
+        for (a, b) in zip(sliders, sliders.dropFirst()) where b.timeMs < a.endMs {
+            error("slider.overlap", "starts before slider \(a.id) ends", b.id)
+        }
+        for slider in sliders {
+            if let s = strokes.first(where: { $0.startMs < slider.endMs && slider.timeMs < $0.endMs }) {
+                error("slider.overlapsStroke", "overlaps stroke \(s.id) in time", slider.id)
+            }
+            for note in map.notes where note.id != slider.id && note.timeMs > slider.timeMs && note.timeMs < slider.endMs {
+                warning("note.duringSlider", "falls during slider \(slider.id); the player is busy dragging", note.id)
+            }
+        }
 
         // Crowding: targets on screen at the same time (pop-up to window close) must be far apart in the
         // player's view. Tap notes are view-fixed; a stroke's start point is compared where it sits in
         // view at its start time.
-        struct Target { var id: String; var fromMs: Double; var toMs: Double; var at: SurfacePoint }
+        // A slider occupies its whole path until it ends, so it is represented by points along the path.
+        struct Target { var id: String; var fromMs: Double; var toMs: Double; var points: [SurfacePoint] }
         func target(_ id: String, _ ms: Double, _ at: SurfacePoint) -> Target {
-            Target(id: id, fromMs: ms - tuning.approachMs, toMs: ms + tuning.goodWindowMs, at: at)
+            Target(id: id, fromMs: ms - tuning.approachMs, toMs: ms + tuning.goodWindowMs, points: [at])
         }
-        let targets = (map.notes.filter { $0.timeMs.isFinite && $0.at.isFinite }.map { target($0.id, $0.timeMs, $0.at) }
+        func noteTarget(_ note: TapNote) -> Target {
+            guard let path = note.sliderPath, note.endMs.isFinite else { return target(note.id, note.timeMs, note.at) }
+            return Target(id: note.id, fromMs: note.timeMs - tuning.approachMs, toMs: note.endMs + tuning.goodWindowMs,
+                          points: path.sampled(count: max(2, Int(path.totalAngleDeg / 5) + 1)))
+        }
+        let targets = (map.notes.filter { $0.timeMs.isFinite && $0.at.isFinite && ($0.slider?.path.allSatisfy(\.isFinite) ?? true) }.map(noteTarget)
             + map.strokes.filter { $0.startMs.isFinite && ($0.path.first?.isFinite ?? false) }
                 .map { target($0.id, $0.startMs, playfield.viewPoint(ofSurface: $0.path[0], atMs: $0.startMs)) })
             .sorted { $0.fromMs < $1.fromMs }
         for i in targets.indices {
             var j = i + 1
             while j < targets.count, targets[j].fromMs <= targets[i].toMs {
-                let sep = targets[i].at.angularDistanceDeg(to: targets[j].at)
+                let sep = targets[i].points.flatMap { p in targets[j].points.map { p.angularDistanceDeg(to: $0) } }.min() ?? 0
                 if sep < tuning.minNoteSeparationDeg {
                     let later = targets[i].toMs > targets[j].toMs ? targets[i] : targets[j]
                     let earlier = later.id == targets[i].id ? targets[j] : targets[i]

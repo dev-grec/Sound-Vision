@@ -18,7 +18,9 @@ Maps are hand-written JSON until the editor exists (M3). Run `scripts/test.sh` a
     { "startBeat": 64, "axis": [0, 1, 0], "degreesPerBeat": 4 }
   ],
   "notes": [
-    { "id": "n01", "timeMs": 4000, "at": { "lat": 15, "lon": -35 } }
+    { "id": "n01", "timeMs": 4000, "at": { "lat": 15, "lon": -35 } },
+    { "id": "n02", "timeMs": 6000, "at": { "lat": -15, "lon": 35 },
+      "slider": { "durationMs": 1000, "path": [ { "lat": -15, "lon": 5 } ] } }
   ],
   "strokes": [
     { "id": "s1", "startMs": 42000, "durationMs": 2000,
@@ -80,6 +82,15 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 
 > One beat at 120 BPM is 500 ms. A four-dot stream: `{lat 0, lon -39}`, `{0, -13}`, `{0, 13}`, `{0, 39}` at 16000, 16500, 17000, 17500 ms. With a 1.5 s approach, all four are on screen together, so each pair must be ≥25° apart; 26° steps leave margin.
 
+## Sliders
+
+A tap note can carry a `slider`: `{ "durationMs", "path": [view points] }`. The player pinches the note (the head) on the beat as usual, then holds and drags along the path, following a ball that leaves the head at `timeMs` and travels the path at constant speed until `timeMs + durationMs`.
+
+- `path` lists the points after the head, in view coordinates like `at`. A straight slider has one point, its end. More points make a bent path (great-circle arcs between them). Curves may come later.
+- Scoring: the head is judged like a tap. A head Miss (Early/Late) ends the slider. Then the drag is scored like a stroke (`PathFollowScorer`, with `Tuning.sliderFollowToleranceDeg`/`sliderFollowFalloffDeg`). At or above `sliderKeepJudgmentScore` (0.8) the slider keeps the head's judgment. At or above `sliderBreakScore` (0.5) it drops one tier. Below that it breaks (Miss). Letting go early leaves the rest unscored. A slider counts once in the score, when it finishes.
+- Rules: every path point inside the play area; ball speed ≤ `Tuning.maxSliderSpeedDegPerSec` (60°/s); sliders may not overlap each other or strokes in time; a note during a slider is a warning. For crowding, a slider occupies its whole path until it ends.
+- **For now the test map has no sliders written in.** The app adds random cardinal sliders each play (launcher toggle "Random sliders", on by default; `RhythmCore/RandomSliders.swift`): up/down/left/right, 20–45°, 1–4 beats, only where a note has room before the next one and the map stays valid. The owner will design each level's sliders to fit its song later, written into the map with this format.
+
 ## Strokes
 
 `{ "id", "startMs", "durationMs", "path": [surface points], "color": "#RRGGBB" }`
@@ -103,12 +114,13 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 - a note leaving the play area while on screen (pop-up to window close)
 - a stroke with fewer than two points, a non-positive duration, a segment of 170° or more, or a start outside the play area
 - overlapping strokes
+- a slider with a non-positive duration, an empty path, a point outside the play area, a ball faster than 60°/s, ending after the song, or overlapping another slider or a stroke
 - **crowded targets**: two targets (notes or stroke starts) on screen at the same time (pop-up to Good window close) and less than `Tuning.minNoteSeparationDeg` (25°) apart on the surface. With a 1.5 s approach, notes 1 s apart overlap and must be spread out; notes 2 s apart don't overlap. The object is rigid, so their separation never changes as it turns.
 
 **Warnings** (the map loads):
 
 - a stroke guide leaving the play area
-- a tap note during a stroke
+- a tap note during a stroke or a slider
 
 ## Versioning
 

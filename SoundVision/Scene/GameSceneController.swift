@@ -39,6 +39,10 @@ final class GameSceneController {
     @ObservationIgnored private var noteEntities: [ModelEntity] = []
     @ObservationIgnored private var approachRings: [Entity?] = []
     @ObservationIgnored private let popups = JudgmentPopups()
+    /// Slider visuals by note index (only notes with a slider).
+    @ObservationIgnored private var sliderVisuals: [Int: SliderVisuals] = [:]
+    @ObservationIgnored private let dragCursor = DragCursor()
+    @ObservationIgnored private var lastDragPoint: SurfacePoint?
     @ObservationIgnored private var updateSubscription: EventSubscription?
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var stopped = false
@@ -52,8 +56,20 @@ final class GameSceneController {
         self.model = model
         guard let entry = model.selectedMap else { return "No beatmap found in the app bundle." }
         guard entry.report.isPlayable else { return "The beatmap has errors; see the launcher." }
-        let map = entry.beatmap
+        var map = entry.beatmap
         let tuning = model.tuning
+        if model.randomSliders {
+            // Development: random cardinal sliders, a new layout each play (or a fixed -sliderSeed).
+            let seed = model.sliderSeed ?? UInt64.random(in: 0...UInt64(UInt32.max))
+            let result = RandomSliders.add(to: map, tuning: tuning, seed: seed)
+            map = result.beatmap
+            let details = result.beatmap.notes.compactMap { note -> String? in
+                guard let slider = note.slider, let end = slider.path.last else { return nil }
+                let dir = end.lat > note.at.lat ? "up" : end.lat < note.at.lat ? "down" : end.lon > note.at.lon ? "right" : "left"
+                return "\(note.id)@\(Int(note.timeMs)) \(dir) \(Int(note.at.angularDistanceDeg(to: end)))° \(Int(slider.durationMs))ms"
+            }
+            log.info("random sliders: seed \(seed), \(details.count) sliders: \(details.joined(separator: "; "), privacy: .public)")
+        }
 
         do {
             try clock.load(map, folder: entry.folder)
@@ -82,6 +98,12 @@ final class GameSceneController {
             return e
         }
         approachRings = noteEntities.map { NoteVisuals.approachRing(of: $0) }
+        for (i, note) in session.notes.enumerated() where note.slider != nil {
+            let visuals = SliderVisuals(note: note, radius: radius, tuning: tuning)
+            glass.root.addChild(visuals.root)
+            sliderVisuals[i] = visuals
+        }
+        glass.root.addChild(dragCursor.entity)
 
         if let hudEntity {
             hudEntity.position = [0, radius + 0.16, 0]
@@ -92,7 +114,7 @@ final class GameSceneController {
         self.rig = rig
         self.glass = glass
         hud = HUD(title: map.meta.title, total: session.notes.count, autoplay: model.autoplay,
-                  message: "Pinch each note when its ring closes")
+                  message: "Pinch each note when its ring closes. Sliders: hold and follow the ball.")
 
         updateSubscription = content.subscribe(to: SceneEvents.Update.self) { [weak self] _ in
             self?.frame()
@@ -127,6 +149,27 @@ final class GameSceneController {
     func handleTap(on entity: Entity) {
         guard !stopped else { return }
         gestures.tap(on: entity)
+    }
+
+    /// A DragGesture update (pinch-and-hold): the press, then movement.
+    func handleDrag(_ value: EntityTargetValue<DragGesture.Value>) {
+        guard !stopped, let rig else { return }
+        let point = surfacePoint(of: value, in: rig.placement)
+        lastDragPoint = point
+        gestures.drag(on: value.entity, point: point)
+    }
+
+    func handleDragEnded(_ value: EntityTargetValue<DragGesture.Value>) {
+        guard !stopped, let rig else { return }
+        lastDragPoint = nil
+        gestures.dragEnded(point: surfacePoint(of: value, in: rig.placement))
+    }
+
+    /// The drag location projected onto the sphere, in view coordinates: convert it into the placement
+    /// frame (centered on the object, non-rotating) and take its direction from the center.
+    private func surfacePoint(of value: EntityTargetValue<DragGesture.Value>, in placement: Entity) -> SurfacePoint? {
+        let p = value.convert(value.location3D, from: .local, to: placement)
+        return SurfacePoint(direction: SIMD3<Double>(Double(p.x), Double(p.y), Double(p.z)))
     }
 
     func stop() {
@@ -169,6 +212,15 @@ final class GameSceneController {
                 } else {
                     log.debug("miss \(id, privacy: .public)")
                 }
+            case .sliderStarted(let id, let head, let delta):
+                spawnPopup(.judgment(head), forNote: id, session: session, now: now)
+                log.info("slider \(id, privacy: .public) head \(head.rawValue, privacy: .public), delta \(Int(delta)) ms")
+            case .sliderEnded(let id, let judgment, let followScore, let combo):
+                if let note = session.notes.first(where: { $0.id == id }), let end = note.sliderBallPoint(atMs: note.endMs) {
+                    let pos = session.playfield.viewPosition(of: end)
+                    popups.spawn(.judgment(judgment), at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
+                }
+                log.info("slider \(id, privacy: .public) ended: \(judgment.rawValue, privacy: .public), follow \(Int(followScore * 100))%, combo \(combo)")
             case .ignored(let target, let reason):
                 log.info("pinch on \(target ?? "nothing", privacy: .public) ignored: \(String(describing: reason), privacy: .public)")
             }
@@ -176,6 +228,8 @@ final class GameSceneController {
         if !events.isEmpty { refreshHUD(session) }
 
         updateNotes(session, now: now, tuning: tuning)
+        updateSliders(session, now: now, tuning: tuning)
+        dragCursor.show(at: lastDragPoint, radius: glass.radius)
         popups.update(nowMs: now, durationMs: tuning.judgmentPopupMs)
 
         if !hud.finished, session.isFinished(nowMs: now) {
@@ -207,6 +261,11 @@ final class GameSceneController {
                     ring.scale = [s, 1, s]
                     NoteVisuals.setOpacity(ring, 0.35 + 0.65 * Float(approach.progress(atMs: judgedNow)))
                 }
+            case .holding:
+                // The slider ball takes over from the head.
+                approachRings[i]?.isEnabled = false
+                NoteVisuals.setTargetable(entity, false)
+                NoteVisuals.setOpacity(entity, 0)
             case .hit(_, _, let atMs):
                 approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
@@ -221,6 +280,17 @@ final class GameSceneController {
                 let t = Float(min(max((now - atMs) / 500, 0), 1))
                 NoteVisuals.setOpacity(entity, 0.8 * (1 - t))
             }
+        }
+    }
+
+    private func updateSliders(_ session: GameSession, now: Double, tuning: Tuning) {
+        let judgedNow = now - tuning.inputOffsetMs
+        for (i, visuals) in sliderVisuals {
+            let approach = session.approaches[i]
+            let popIn = approach.hasAppeared(atMs: judgedNow)
+                ? Float(min(max((judgedNow - approach.appearMs) / tuning.noteFadeInMs, 0), 1)) : 0
+            visuals.update(note: session.notes[i], state: session.states[i], popIn: popIn, judgedNow: judgedNow,
+                           nowMs: now, lastCredit: session.lastFollowCredit(ofNote: i))
         }
     }
 

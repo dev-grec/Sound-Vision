@@ -8,8 +8,8 @@ public enum InputEvent: Sendable, Equatable {
     /// A pinch while targeting an entity. `targetID` is the note or stroke ID of the targeted entity,
     /// or nil if the pinch targeted nothing the game knows about.
     case tap(targetID: String?, atMs: Double)
-    /// A drag began on a target (M1: stroke start). `point` is the drag location on the surface,
-    /// in the object's own rotating coordinates.
+    /// A drag began on a target (the pinch press). `point` is the drag location projected onto the
+    /// object, in view coordinates (placement frame; lat 0, lon 0 = straight toward the player).
     case dragBegan(targetID: String?, point: SurfacePoint?, atMs: Double)
     case dragChanged(point: SurfacePoint?, atMs: Double)
     case dragEnded(point: SurfacePoint?, atMs: Double)
@@ -47,12 +47,28 @@ public struct ScriptedInputSource: InputSource, Sendable {
 
     public var isEmpty: Bool { pending.isEmpty }
 
-    /// Perfect play: one tap on every note exactly on time (accounting for the input offset so the
-    /// judged delta is zero). `jitterMs` optionally shifts every tap, to exercise other judgments.
-    public static func autoplay(for beatmap: Beatmap, tuning: Tuning, jitterMs: Double = 0) -> ScriptedInputSource {
-        let taps = beatmap.notes.map {
-            InputEvent.tap(targetID: $0.id, atMs: $0.timeMs + tuning.inputOffsetMs + jitterMs)
+    /// Perfect play: every note pinched exactly on time (accounting for the input offset so the judged
+    /// delta is zero). Sliders are pressed, dragged along the ball at `sampleHz`, and released just after
+    /// their end. `jitterMs` shifts every pinch, to exercise other judgments.
+    public static func autoplay(for beatmap: Beatmap, tuning: Tuning, jitterMs: Double = 0,
+                                sampleHz: Double = 60) -> ScriptedInputSource {
+        var events: [InputEvent] = []
+        for note in beatmap.notes {
+            let t0 = note.timeMs + tuning.inputOffsetMs + jitterMs
+            guard let slider = note.slider else {
+                events.append(.tap(targetID: note.id, atMs: t0))
+                continue
+            }
+            events.append(.dragBegan(targetID: note.id, point: note.at, atMs: t0))
+            let step = 1000 / sampleHz
+            var t = step
+            while t < slider.durationMs {
+                let point = note.sliderBallPoint(atMs: note.timeMs + t)
+                events.append(.dragChanged(point: point, atMs: t0 + t))
+                t += step
+            }
+            events.append(.dragEnded(point: note.sliderBallPoint(atMs: note.endMs), atMs: t0 + slider.durationMs + 5))
         }
-        return ScriptedInputSource(events: taps)
+        return ScriptedInputSource(events: events)
     }
 }

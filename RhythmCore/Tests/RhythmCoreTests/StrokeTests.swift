@@ -34,14 +34,14 @@ import Testing
     }
 }
 
-@Suite struct StrokeFollowScorerTests {
+@Suite struct PathFollowScorerTests {
     let tuning = Tuning()
     let stroke = Stroke(id: "s1", startMs: 10_000, durationMs: 2000,
                         path: [SurfacePoint(lat: 0, lon: 0), SurfacePoint(lat: 0, lon: 60)],
                         color: RGBColor(red: 1, green: 0, blue: 0))
 
     /// Drag samples at 90 Hz over [fromMs, toMs], placed at the guide position shifted north by `offsetLat`.
-    func follow(_ scorer: inout StrokeFollowScorer, fromMs: Double, toMs: Double, offsetLat: Double = 0) {
+    func follow(_ scorer: inout PathFollowScorer, fromMs: Double, toMs: Double, offsetLat: Double = 0) {
         var t = fromMs
         while t <= toMs {
             let g = scorer.guidePoint(atMs: t)
@@ -51,41 +51,41 @@ import Testing
     }
 
     @Test func guideMovesAtConstantSpeed() {
-        let scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        let scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
         #expect(approxEqual(scorer.guidePoint(atMs: 9_000).lon, 0))   // before start: at start point
         #expect(approxEqual(scorer.guidePoint(atMs: 11_000).lon, 30))  // halfway
         #expect(approxEqual(scorer.guidePoint(atMs: 13_000).lon, 60))  // after end: at end point
     }
 
     @Test func perfectFollowScoresOne() {
-        var scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        var scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
         follow(&scorer, fromMs: 10_000, toMs: 12_000)
         #expect(approxEqual(scorer.followScore, 1))
     }
 
     @Test func withinToleranceStillScoresOne() {
-        var scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        var scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
         follow(&scorer, fromMs: 10_000, toMs: 12_000, offsetLat: 5) // tolerance is 6°
         #expect(approxEqual(scorer.followScore, 1))
     }
 
     @Test func creditFallsOffLinearly() {
-        #expect(StrokeFollowScorer.credit(errorDeg: 12, tuning: tuning) == 0.5) // halfway from 6° to 18°
-        #expect(StrokeFollowScorer.credit(errorDeg: 18, tuning: tuning) == 0)
-        var scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        #expect(PathFollowScorer.credit(errorDeg: 12, toleranceDeg: tuning.followToleranceDeg, falloffDeg: tuning.followFalloffDeg) == 0.5) // halfway from 6° to 18°
+        #expect(PathFollowScorer.credit(errorDeg: 18, toleranceDeg: tuning.followToleranceDeg, falloffDeg: tuning.followFalloffDeg) == 0)
+        var scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
         follow(&scorer, fromMs: 10_000, toMs: 12_000, offsetLat: 12)
         #expect(approxEqual(scorer.followScore, 0.5, tolerance: 1e-6))
     }
 
     @Test func lettingGoHalfwayScoresAboutHalf() {
-        var scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        var scorer = PathFollowScorer(stroke: stroke, tuning: tuning)
         follow(&scorer, fromMs: 10_000, toMs: 11_000)
         #expect(approxEqual(scorer.followScore, 0.5, tolerance: 0.051))
     }
 
     @Test func sampleRateDoesNotMatter() {
-        var sparse = StrokeFollowScorer(stroke: stroke, tuning: tuning)
-        var dense = StrokeFollowScorer(stroke: stroke, tuning: tuning)
+        var sparse = PathFollowScorer(stroke: stroke, tuning: tuning)
+        var dense = PathFollowScorer(stroke: stroke, tuning: tuning)
         for i in 0..<20 { // one sample in the middle of each bucket
             let t = 10_000 + (Double(i) + 0.5) * 100
             sparse.addSample(point: sparse.guidePoint(atMs: t), atMs: t)
@@ -97,7 +97,7 @@ import Testing
     @Test func samplesOutsideStrokeAreIgnoredAndOffsetApplies() {
         var t = Tuning()
         t.inputOffsetMs = 50
-        var scorer = StrokeFollowScorer(stroke: stroke, tuning: t)
+        var scorer = PathFollowScorer(stroke: stroke, tuning: t)
         #expect(scorer.addSample(point: SurfacePoint(lat: 0, lon: 0), atMs: 10_020) == nil) // judged 9970: before start
         #expect(scorer.addSample(point: SurfacePoint(lat: 0, lon: 0), atMs: 10_050) == 1)
         #expect(scorer.addSample(point: SurfacePoint(lat: 0, lon: 60), atMs: 12_040) != nil) // judged 11990: inside

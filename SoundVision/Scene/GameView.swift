@@ -23,6 +23,14 @@ struct GameView: View {
                 .targetedToAnyEntity()
                 .onEnded { value in controller.handleTap(on: value.entity) }
         )
+        // Pinch-and-hold for sliders. minimumDistance 0 reports the press immediately; for a plain note
+        // whichever of the two gestures arrives first judges it (RhythmCore ignores the second).
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .targetedToAnyEntity()
+                .onChanged { value in controller.handleDrag(value) }
+                .onEnded { value in controller.handleDragEnded(value) }
+        )
         .onDisappear { controller.stop() }
     }
 }
