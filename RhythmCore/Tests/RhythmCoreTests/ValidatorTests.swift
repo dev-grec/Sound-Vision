@@ -53,10 +53,19 @@ import Testing
         #expect(report.errors.first?.itemID == "n")
     }
 
-    @Test func noteOffCenterIsWarning() {
-        let report = BeatmapValidator.validate(Fixtures.map(notes: [Fixtures.note("n", atMs: 4000, lat: 25)]), tuning: tuning)
-        #expect(report.isPlayable)
-        #expect(report.warnings.map(\.code) == ["note.offCenter"])
+    @Test func notesMayPopUpAnywhereInThePlayArea() {
+        // Off center, up and to the right at hit time: fine.
+        let note = TapNote(id: "n", timeMs: 4000, at: SurfacePoint(lat: 25, lon: Fixtures.frontLon(atMs: 4000) + 20))
+        let report = BeatmapValidator.validate(Fixtures.map(notes: [note]), tuning: tuning)
+        #expect(report.issues.isEmpty, "\(report.issues)")
+    }
+
+    @Test func noteDriftingOutOfPlayAreaWhileOnScreenIsError() {
+        // 35° left of front at hit time is inside the 45° area, but it popped up 1.5 s earlier,
+        // 18° further left (53°), so it was on screen outside the area.
+        let note = TapNote(id: "n", timeMs: 4000, at: SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 4000) - 35))
+        let report = BeatmapValidator.validate(Fixtures.map(notes: [note]), tuning: tuning)
+        #expect(report.errors.map(\.code) == ["note.outsideZone"])
     }
 
     @Test func noteTimingRules() {
@@ -77,12 +86,15 @@ import Testing
         #expect(report.errors.contains { $0.code == "targets.crowded" && $0.itemID == "b" })
     }
 
-    @Test func crowdingUsesApproachOverlapNotAFixedWindow() {
-        // 2 s apart and 24° apart: b is already targetable (3.3 s lead at 12°/s) while a is still due.
+    @Test func crowdingUsesOnScreenOverlap() {
+        // 1 s apart and 12° apart: b pops up (1.5 s before) while a is still on screen.
         let a = Fixtures.note("a", atMs: 4000)
-        let b = Fixtures.note("b", atMs: 6000)
+        let b = Fixtures.note("b", atMs: 5000)
         let report = BeatmapValidator.validate(Fixtures.map(notes: [a, b]), tuning: tuning)
         #expect(report.errors.contains { $0.code == "targets.crowded" && $0.itemID == "b" })
+        // 2 s apart: a is gone (window closed at 4170) before b pops up (4500).
+        let c = Fixtures.note("c", atMs: 6000)
+        #expect(!BeatmapValidator.validate(Fixtures.map(notes: [a, c]), tuning: tuning).has("targets.crowded"))
     }
 
     @Test func sameSpotFarApartInTimeIsFine() {

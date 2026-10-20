@@ -37,13 +37,13 @@ It clashes with Apple's GameController framework, which RealityKit pulls in. The
 ### D8. System look-and-pinch only (owner's rule)
 Notes are entities with `CollisionComponent` + `InputTargetComponent` + `HoverEffectComponent` and a `GameTargetComponent(targetID:)`. `SpatialTapGesture().targetedToAnyEntity()` delivers pinches. No ARKit hand tracking, no eye tracking, and nothing reads gaze before a pinch.
 - **The glass shells have no collision or input target**, so they can't swallow pinches aimed at notes.
-- A note's input target is enabled only within `Tuning.targetableHalfAngleDeg` (40°) of front, so far-side notes seen through the glass can't be pinched, and the hover highlight appears as a note arrives.
+- A note's input target is enabled only while it's on screen (pop-up to judgment). Hidden notes are disabled entities, so nothing on the far side can be pinched.
 - A pinch must target the note entity itself. There is no "nearest note" assist. If device testing shows misses from imprecise targeting, try a bigger `noteHitRadiusScale` before adding an assist.
 
 ### D9. Pinches are timestamped on arrival, and the offset is applied only in RhythmCore (M0)
 Gesture callbacks carry no audio timestamp, so `GestureInputSource` stamps each event with `clock.nowMs` when the callback runs. `Tuning.inputOffsetMs` is subtracted only in `TapJudge.delta`, `GameSession` (zone check and auto-miss) and `StrokeFollowScorer`. Never apply it in the app as well.
 - Each frame, inputs are processed **before** auto-misses, so a pinch stamped inside its window still counts if the frame that delivers it lands just after the window closed.
-- A pinch outside the zone or the timing window is **ignored, not punished**: imprecise targeting shouldn't break combos. A note becomes a Miss only when its Good window passes unhit.
+- A pinch outside the timing window is **ignored, not punished**: imprecise targeting shouldn't break combos. It does show "Early" or "Late" so the player sees that the pinch registered (the first build ignored such pinches silently, which looked like broken input). A note becomes a Miss only when its Good window passes unhit.
 
 ## Rendering
 
@@ -81,8 +81,16 @@ The stroke's duration is split into `Tuning.strokeScoreBuckets` buckets. Each bu
 ### D14. Tuning is one Codable struct with defaults (M0)
 Every game-feel number is in `RhythmCore/Sources/RhythmCore/Tuning.swift`. The synthesized `Decodable` requires every key, so M2's persisted settings need a decoder that falls back to the defaults for missing keys.
 
-### D16. Notes exist only on their final approach (M0, found in the simulator)
-The object rotates continuously, so every surface point passes the front once per revolution. The first build drew every pending note all the time. The autoplay run in the simulator showed notes due 40 s later glowing as "hittable" in the zone next to the current ones, overlapping them. `Playfield.approach(of:hitMs:tuning:)` finds, counting back from the hit time, when the note was last `noteAppearAngleDeg` (150°) and `targetableHalfAngleDeg` (40°) from front. `GameSession.approaches` holds this per note, and `isOnFinalApproach` gates it. The app hides a note before `appearMs` (it is disabled, so it has no input either) and then fades it in over `noteFadeInMs`. The default of 150° means a note first appears on the far side, faint through the glass, and then comes around, which is the approach the design asks for. Strokes (M1) must use the same rule for their start points. Regression tests: `LappingTests`, `ApproachTests`, `crowdingUsesApproachOverlapNotAFixedWindow`.
+### D16. Notes exist only from their pop-up (M0, found in the simulator)
+The object rotates continuously, so every surface point passes the front once per revolution. The first build drew every pending note all the time, and the simulator showed notes due 40 s later glowing as hittable next to the current ones, overlapping them. Now each note has a `NoteApproach` (`GameSession.approaches`): it is hidden and disabled (no input) until `appearMs`, then pops up. Regression test: `LappingTests`. (An interim fix showed notes from their "final approach" on the far side; D17 replaced that.)
+
+### D17. Approach ring is the timing cue; notes pop up around the play area (owner's design change, 2026-10-19)
+The original brief made the rotation the approach: a note became hittable as it rotated into a front zone, and its beat was when it reached center. On trying it, the owner clarified the intended design: notes **pop up around the player's view**, and **an outer ring tells you exactly when to click**. So:
+- A note pops up `Tuning.approachMs` (1500 ms) before its time. An approach ring (`NoteVisuals` child "approachRing", `NoteApproach.ringScale`) shrinks from `approachRingStartScale` (3×) to the note's edge and closes at the hit time.
+- Notes are placed anywhere in the **play area** (`hitZoneHalfAngleDeg`, now 45°) and must stay in it while on screen (validator). The center hit-zone outline is gone, along with the "comfort angle" warning and the targetable angle.
+- The object still rotates slowly in time with the music, and notes ride on it. That keeps the glass and picture concept, but rotation is no longer the timing cue.
+- Crowding compares targets on screen at the same time (pop-up to window close).
+- Notes no longer show faintly on the far side before they arrive (the brief had them visible through the glass as they came around). A faint preview of upcoming notes could come back as an option if the owner wants it.
 
 ## Debug tooling
 

@@ -6,8 +6,8 @@ import UIKit
 ///
 /// A note is a flat disc lying on the surface, a child of the glass object's rotating `surfaceRoot`.
 /// It carries a GameTargetComponent with its note ID, plus collision, input target and hover effect so
-/// the system's look-and-pinch can target it. Its input target is enabled only while the note is near
-/// the hittable zone, so far-side notes seen through the glass can't be pinched.
+/// the system's look-and-pinch can target it. Its child "approachRing" shrinks onto it and closes at
+/// the hit time. Notes are hidden and untargetable until they pop up.
 @MainActor
 enum NoteVisuals {
     enum Look {
@@ -33,7 +33,23 @@ enum NoteVisuals {
         entity.components.set(input)
         entity.components.set(HoverEffectComponent())
         entity.components.set(OpacityComponent(opacity: 1))
+
+        if let mesh = try? MeshBuilders.annulus(radius: discRadius, thickness: 0.003) {
+            var m = UnlitMaterial(color: .white)
+            m.faceCulling = .none
+            let ring = ModelEntity(mesh: mesh, materials: [m])
+            ring.name = approachRingName
+            ring.position = [0, 0.002, 0] // just above the disc, so it doesn't z-fight when it closes
+            ring.isEnabled = false
+            entity.addChild(ring)
+        }
         return entity
+    }
+
+    static let approachRingName = "approachRing"
+
+    static func approachRing(of note: Entity) -> Entity? {
+        note.children.first { $0.name == approachRingName }
     }
 
     static func setLook(_ entity: ModelEntity, _ look: Look) {

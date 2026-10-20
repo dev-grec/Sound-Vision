@@ -13,8 +13,8 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] Far-side notes and strokes look like they're behind the glass, and near-side ones look in front. No sort popping as items cross the silhouette.
 - [ ] No z-fighting between notes or ribbons and the glass.
 - [ ] Far-side opacity (`Tuning.farSideOpacity` 0.35): can approaching notes be seen coming around without being distracting?
-- [ ] Hit-zone outline ring is visible but subtle.
-- [ ] Notes fading in on the far side (`noteAppearAngleDeg` 150°, `noteFadeInMs` 400): is there enough warning that a note is coming? Is it too cluttered?
+- [ ] Approach ring: is it easy to see where a note popped up, and to read when the ring closes? Ring start size (`approachRingStartScale` 3×), approach time (`approachMs` 1500), thickness (3 mm).
+- [ ] Pop-up (`noteFadeInMs` 200): noticeable without being jarring.
 - [ ] Judgment popups are readable and don't block the next note.
 - [ ] HUD above the sphere is readable, and its position is comfortable.
 
@@ -24,22 +24,22 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] Launching with the head tilted: is the placement badly tilted? (DECISIONS D4)
 - [ ] The launcher window sits behind the sphere and shows through the glass. Is it distracting? (Possible fix: hide the window during play, M2.)
 - [ ] Rotation speed (12°/s, then 8°/s after beat 64 in the test map) feels slow enough to target with the eyes.
-- [ ] Note spacing: `minNoteSeparationDeg` 25° between targets that are targetable at the same time. Is it too tight or too loose for eye targeting?
+- [ ] Note spacing: `minNoteSeparationDeg` 25° between targets on screen at the same time. Is it too tight or too loose for eye targeting?
 
 ## Input
 
-- [ ] Look-and-pinch on a glowing (cyan) note registers. (In the simulator this has only been exercised through autoplay. Gestures on entities under a `.head` anchor with `physicsSimulation: .none` are unverified.)
-- [ ] Hover highlight appears on notes as they enter the targetable zone.
+- [ ] Look-and-pinch on a note registers, and "Early"/"Late" shows for off-beat pinches. (In the simulator this has only been exercised through autoplay. Gestures on entities under a `.head` anchor with `physicsSimulation: .none` are unverified.)
+- [ ] Hover highlight appears on notes once they pop up.
 - [ ] Far-side notes can't be pinched through the glass.
 - [ ] Note size (`noteDiameterM` 7 cm, hit radius ×1.3) is easy to target.
 - [ ] Hit windows (±60/110/170 ms) feel fair with pinch latency.
 - [ ] Input offset: find the value at which on-beat pinches score Perfect, and record it here as a starting default.
-- [ ] Hittable zone angle (30°) feels right: notes are pinchable when they look like they should be.
+- [ ] Play area (45° from front): notes pop up within comfortable eye range, not too far to the sides.
 
 ## Audio and timing
 
 - [ ] Click track plays with no crackle, and accents land on beat 1.
-- [ ] A/V sync: notes reach zone center exactly on the click (AudioEngineClock subtracts `outputLatency`; check it isn't off by a constant).
+- [ ] A/V sync: approach rings close exactly on the click (AudioEngineClock subtracts `outputLatency`; check it isn't off by a constant).
 - [ ] Rotation is smooth, with no stepping from the roughly 10 ms render-buffer clock updates.
 - [ ] Song end: the rotation freezes and the result shows in the launcher.
 

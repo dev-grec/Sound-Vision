@@ -37,8 +37,8 @@ final class GameSceneController {
     @ObservationIgnored private var rig: PlacementRig?
     @ObservationIgnored private var glass: GlassObject?
     @ObservationIgnored private var noteEntities: [ModelEntity] = []
+    @ObservationIgnored private var approachRings: [Entity?] = []
     @ObservationIgnored private let popups = JudgmentPopups()
-    @ObservationIgnored private var zoneRing: ModelEntity?
     @ObservationIgnored private var updateSubscription: EventSubscription?
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var stopped = false
@@ -72,22 +72,13 @@ final class GameSceneController {
         rig.placement.addChild(glass.root)
         rig.placement.addChild(popups.root)
 
-        // Outline of the hittable zone, fixed toward the player.
-        if let mesh = try? MeshBuilders.surfaceRibbon(directions: MeshBuilders.zoneCircle(angleDeg: tuning.hitZoneHalfAngleDeg),
-                                                       radius: radius, lift: 0.001, width: 0.003, closed: true) {
-            var m = UnlitMaterial(color: .white)
-            m.blending = .transparent(opacity: .init(floatLiteral: 0.3))
-            m.faceCulling = .none
-            let ring = ModelEntity(mesh: mesh, materials: [m])
-            glass.root.addChild(ring)
-            zoneRing = ring
-        }
-
         noteEntities = session.notes.map { note in
             let e = NoteVisuals.makeNote(note, radius: radius, tuning: tuning)
+            e.isEnabled = false // hidden until it pops up
             glass.surfaceRoot.addChild(e)
             return e
         }
+        approachRings = noteEntities.map { NoteVisuals.approachRing(of: $0) }
 
         if let hudEntity {
             hudEntity.position = [0, radius + 0.16, 0]
@@ -98,7 +89,7 @@ final class GameSceneController {
         self.rig = rig
         self.glass = glass
         hud = HUD(title: map.meta.title, total: session.notes.count, autoplay: model.autoplay,
-                  message: "Pinch a glowing note as it reaches the center, on the click")
+                  message: "Pinch each note when its ring closes")
 
         updateSubscription = content.subscribe(to: SceneEvents.Update.self) { [weak self] _ in
             self?.frame()
@@ -186,7 +177,6 @@ final class GameSceneController {
         #if DEBUG
         logRenderedVersusExpected(session, glass: glass, now: now)
         #endif
-        if let zoneRing { glass.setSide(of: zoneRing, farSide: false) }
         popups.update(nowMs: now, durationMs: tuning.judgmentPopupMs)
 
         if !hud.finished, session.isFinished(nowMs: now) {
@@ -202,28 +192,36 @@ final class GameSceneController {
             glass.setSide(of: entity, farSide: far)
             switch session.states[i] {
             case .pending:
-                // Every note passes the front once per revolution; show it only on the pass that ends
-                // at its own time (RhythmCore: GameSession.isOnFinalApproach).
-                guard session.isOnFinalApproach(i, atMs: now) else {
+                // A note exists only from its pop-up (the object keeps turning, so its surface spot also
+                // passes the front on earlier laps). Then its ring shrinks and closes at the hit time.
+                guard session.hasAppeared(i, atMs: now) else {
                     NoteVisuals.setTargetable(entity, false)
                     if entity.isEnabled { entity.isEnabled = false }
                     continue
                 }
                 if !entity.isEnabled { entity.isEnabled = true }
-                let angle = session.playfield.angleFromFrontDeg(of: note.at, atMs: now)
-                let sinceAppear = now - tuning.inputOffsetMs - session.approaches[i].appearMs
-                let fadeIn = Float(min(max(sinceAppear / tuning.noteFadeInMs, 0), 1))
-                NoteVisuals.setTargetable(entity, angle <= tuning.targetableHalfAngleDeg)
-                NoteVisuals.setLook(entity, angle <= tuning.hitZoneHalfAngleDeg ? .hittable : .approaching)
-                NoteVisuals.setOpacity(entity, (far ? farOpacity : 1) * fadeIn)
-                entity.scale = .one
+                let judgedNow = now - tuning.inputOffsetMs
+                let approach = session.approaches[i]
+                let pop = Float(min(max((judgedNow - approach.appearMs) / tuning.noteFadeInMs, 0), 1))
+                NoteVisuals.setTargetable(entity, true)
+                NoteVisuals.setLook(entity, .hittable)
+                NoteVisuals.setOpacity(entity, (far ? farOpacity : 1) * pop)
+                entity.scale = SIMD3(repeating: 0.6 + 0.4 * pop)
+                if let ring = approachRings[i] {
+                    if !ring.isEnabled { ring.isEnabled = true }
+                    let s = Float(approach.ringScale(atMs: judgedNow, tuning: tuning))
+                    ring.scale = [s, 1, s]
+                    NoteVisuals.setOpacity(ring, 0.35 + 0.65 * Float(approach.progress(atMs: judgedNow)))
+                }
             case .hit(_, _, let atMs):
+                approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
                 NoteVisuals.setLook(entity, .hit)
                 let t = Float(min(max((now - atMs) / 250, 0), 1))
                 entity.scale = SIMD3(repeating: 1 + 0.6 * t)
                 NoteVisuals.setOpacity(entity, 1 - t)
             case .missed(let atMs):
+                approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
                 NoteVisuals.setLook(entity, .missed)
                 let t = Float(min(max((now - atMs) / 500, 0), 1))

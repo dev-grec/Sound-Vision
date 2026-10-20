@@ -207,16 +207,24 @@ import Testing
 }
 
 /// Regression: every point passes the front once per revolution (30 s at 12°/s). A note due later must
-/// not count as present when it passes the front on an earlier lap (found in the simulator in M0:
-/// end-of-song notes showed as hittable next to the current ones).
+/// not exist when its surface spot passes the front on an earlier lap (found in the simulator in M0:
+/// end-of-song notes showed as hittable next to the current ones). Notes exist only from their pop-up.
 @Suite struct LappingTests {
-    @Test func laterNoteIsNotOnFinalApproachDuringEarlierLap() {
+    @Test func laterNoteHasNotAppearedDuringEarlierLap() {
         let early = Fixtures.note("early", atMs: 10_000)
-        let lapped = Fixtures.note("lapped", atMs: 40_000, lat: 12) // same front position, one revolution later
+        let lapped = Fixtures.note("lapped", atMs: 40_000, lat: 30) // same front spot, one revolution later
         let session = GameSession(beatmap: Fixtures.map(notes: [early, lapped]), tuning: Tuning())
-        #expect(session.playfield.isInHitZone(lapped.at, atMs: 10_000, tuning: session.tuning)) // geometrically in the zone...
-        #expect(!session.isOnFinalApproach(1, atMs: 10_000))                                    // ...but not playable yet
-        #expect(session.isOnFinalApproach(1, atMs: 39_000))
-        #expect(session.isOnFinalApproach(0, atMs: 10_000))
+        #expect(session.playfield.isInHitZone(lapped.at, atMs: 10_000, tuning: session.tuning)) // geometrically in front...
+        #expect(!session.hasAppeared(1, atMs: 10_000))                                          // ...but not shown
+        #expect(session.hasAppeared(1, atMs: 38_500))
+        #expect(!session.hasAppeared(1, atMs: 38_499))
+    }
+
+    @Test func appearanceRespectsInputOffset() {
+        var t = Tuning()
+        t.inputOffsetMs = 100
+        let session = GameSession(beatmap: Fixtures.map(notes: [Fixtures.note("n", atMs: 10_000)]), tuning: t)
+        #expect(!session.hasAppeared(0, atMs: 8_599))
+        #expect(session.hasAppeared(0, atMs: 8_600))
     }
 }

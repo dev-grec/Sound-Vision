@@ -157,15 +157,19 @@ import Testing
         #expect(field.isInHitZone(note.at, atMs: 4000, tuning: tuning))
     }
 
-    @Test func zoneEntryAndExitFollowRotationSpeed() {
-        // 12°/s with a 30° half-angle zone: the note is in the zone from 2.5 s before to 2.5 s after.
+    @Test func playAreaEntryAndExitFollowRotationSpeed() {
+        // 12°/s with a 45° play area: a front-center point is inside from 3.75 s before to 3.75 s after.
         let note = Fixtures.note("n", atMs: 10_000)
-        #expect(field.isInHitZone(note.at, atMs: 7_600, tuning: tuning))
-        #expect(!field.isInHitZone(note.at, atMs: 7_400, tuning: tuning))
-        #expect(field.isInHitZone(note.at, atMs: 12_400, tuning: tuning))
-        #expect(!field.isInHitZone(note.at, atMs: 12_600, tuning: tuning))
-        // Targetable (40°) a little earlier.
-        #expect(field.isTargetable(note.at, atMs: 7_000, tuning: tuning))
+        #expect(field.isInHitZone(note.at, atMs: 6_300, tuning: tuning))
+        #expect(!field.isInHitZone(note.at, atMs: 6_200, tuning: tuning))
+        #expect(field.isInHitZone(note.at, atMs: 13_700, tuning: tuning))
+        #expect(!field.isInHitZone(note.at, atMs: 13_800, tuning: tuning))
+    }
+
+    @Test func maxAngleOverSpan() {
+        let note = Fixtures.note("n", atMs: 10_000)
+        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note.at, fromMs: 8_500, toMs: 10_000), 18, tolerance: 1e-6))
+        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note.at, fromMs: 9_000, toMs: 11_500), 18, tolerance: 1e-6))
     }
 
     @Test func latitudeAddsToAngleFromFront() {
@@ -189,26 +193,22 @@ import Testing
     }
 }
 
-@Suite struct ApproachTests {
-    let field = Playfield(beatmap: Fixtures.map())
+@Suite struct NoteApproachTests {
     let tuning = Tuning()
 
-    @Test func approachTimesFollowRotationSpeed() {
-        // 12°/s: a note centered at 20 s was 150° from front 12.5 s earlier and 40° from front 3.33 s earlier.
-        let note = Fixtures.note("n", atMs: 20_000)
-        let a = field.approach(of: note.at, hitMs: 20_000, tuning: tuning)
-        #expect(approxEqual(a.appearMs, 7_500, tolerance: 1))
-        #expect(approxEqual(a.targetableFromMs, 20_000 - 40_000.0 / 12, tolerance: 1))
+    @Test func popsUpApproachMsBeforeHit() {
+        let a = NoteApproach(hitMs: 10_000, tuning: tuning)
+        #expect(a.appearMs == 8_500)
+        #expect(!a.hasAppeared(atMs: 8_499))
+        #expect(a.hasAppeared(atMs: 8_500))
     }
 
-    @Test func alreadyFarAwayReturnsSameTime() {
-        let behind = SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 0) + 180)
-        #expect(field.lastTimeBefore(0, point: behind, atLeastDeg: 150) == 0)
-    }
-
-    @Test func pointThatNeverLeavesIsCappedByLookback() {
-        // The north pole sits on the rotation axis: always 90° from front, never 150°.
-        let pole = SurfacePoint(lat: 90, lon: 0)
-        #expect(field.lastTimeBefore(50_000, point: pole, atLeastDeg: 150, lookbackMs: 10_000) == 40_000)
+    @Test func ringShrinksFromStartScaleToOneAtHitTime() {
+        let a = NoteApproach(hitMs: 10_000, tuning: tuning)
+        #expect(a.ringScale(atMs: 8_500, tuning: tuning) == 3)
+        #expect(a.ringScale(atMs: 9_250, tuning: tuning) == 2)
+        #expect(a.ringScale(atMs: 10_000, tuning: tuning) == 1)
+        #expect(a.ringScale(atMs: 10_100, tuning: tuning) == 1) // stays closed after the hit time
+        #expect(a.progress(atMs: 0) == 0)
     }
 }

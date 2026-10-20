@@ -83,12 +83,27 @@ enum MeshBuilders {
         return try MeshResource.generate(from: [desc])
     }
 
-    /// Points on a circle of the sphere, `angleDeg` from the +Z pole: the outline of the hit zone.
-    static func zoneCircle(angleDeg: Double, count: Int = 96) -> [SIMD3<Float>] {
-        let a = Float(angleDeg * .pi / 180)
-        return (0..<count).map { i in
-            let az = Float(i) / Float(count) * 2 * .pi
-            return SIMD3(sin(a) * cos(az), sin(a) * sin(az), cos(a))
+    /// A flat ring in the XZ plane (normal +Y), outer radius `radius`, `thickness` wide. Lies flat on
+    /// the surface like a note disc. Used for approach rings (render with `faceCulling = .none`).
+    static func annulus(radius: Float, thickness: Float, segments: Int = 64) throws -> MeshResource {
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        let inner = max(radius - thickness, 0)
+        for k in 0...segments {
+            let a = Float(k) / Float(segments) * 2 * .pi
+            let dir = SIMD3<Float>(cos(a), 0, sin(a))
+            positions += [dir * radius, dir * inner]
+            normals += [[0, 1, 0], [0, 1, 0]]
         }
+        var indices: [UInt32] = []
+        for k in 0..<UInt32(segments) {
+            let o0 = 2 * k, i0 = 2 * k + 1, o1 = 2 * k + 2, i1 = 2 * k + 3
+            indices += [o0, i0, o1, o1, i0, i1]
+        }
+        var desc = MeshDescriptor(name: "annulus")
+        desc.positions = MeshBuffers.Positions(positions)
+        desc.normals = MeshBuffers.Normals(normals)
+        desc.primitives = .triangles(indices)
+        return try MeshResource.generate(from: [desc])
     }
 }

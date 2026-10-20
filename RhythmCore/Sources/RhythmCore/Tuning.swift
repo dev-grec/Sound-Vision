@@ -25,26 +25,22 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Range of the user-facing offset slider.
     public var inputOffsetRangeMs: ClosedRange<Double> = -250...250
 
-    // MARK: Hittable zone
+    // MARK: Play area
 
-    /// A note is hittable while the angle between its surface normal and the front direction
-    /// (toward the player) is at most this. [device]
-    public var hitZoneHalfAngleDeg: Double = 30
-    /// Notes become input targets (hover highlight, pinchable) inside this angle, slightly wider than
-    /// the hit zone so the highlight appears as they arrive. Taps outside the hit zone are still ignored.
-    public var targetableHalfAngleDeg: Double = 40
-    /// Validator: a note should sit within this angle of zone center at its own time.
-    /// Outside it (but inside the hit zone) is a warning. Outside the hit zone is an error.
-    public var noteComfortAngleDeg: Double = 20
+    /// The play area: the part of the object's front, within this angle of the direction toward the
+    /// player, where notes pop up and can be hit. The validator requires every note to stay inside it
+    /// for its whole visible window (pop-up to the end of its Good window). [device]
+    public var hitZoneHalfAngleDeg: Double = 45
 
-    // MARK: Note approach
+    // MARK: Note approach (pop-up + shrinking ring)
 
-    /// Every point on the object passes the front once per revolution, so a note is shown only on its
-    /// final approach: it appears when it was last this far from front before its hit time.
-    /// Over 90° means it first shows on the far side, faintly through the glass. [device]
-    public var noteAppearAngleDeg: Double = 150
-    /// Fade-in time when a note appears, in ms.
-    public var noteFadeInMs: Double = 400
+    /// A note pops up this long before its hit time. Its approach ring shrinks over the same span and
+    /// closes onto the note exactly at the hit time: that's the timing cue. [device]
+    public var approachMs: Double = 1500
+    /// Approach ring size when the note pops up, as a multiple of the note's radius (1 = touching). [device]
+    public var approachRingStartScale: Double = 3
+    /// Pop-up animation time (fade and grow in), in ms.
+    public var noteFadeInMs: Double = 200
 
     // MARK: Note size and spacing
 
@@ -54,8 +50,8 @@ public struct Tuning: Codable, Sendable, Equatable {
     public var noteHitRadiusScale: Double = 1.3
     /// Height of notes above the glass surface, in meters, to avoid z-fighting.
     public var noteSurfaceLiftM: Double = 0.004
-    /// Validator: two targets (notes or stroke starts) that are targetable at the same time
-    /// (overlapping final approaches) must be at least this far apart on the surface. [device]
+    /// Validator: two targets (notes or stroke starts) on screen at the same time (overlapping
+    /// pop-up-to-window-close spans) must be at least this far apart on the surface. [device]
     public var minNoteSeparationDeg: Double = 25
 
     // MARK: Rotation

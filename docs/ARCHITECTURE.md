@@ -32,12 +32,13 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 | `BeatmapLoader` | `Beatmap/BeatmapLoader.swift` | Version check first, then decode, with readable errors |
 | `BeatmapValidator` | `Beatmap/BeatmapValidator.swift` | Format and playability rules (zone placement, crowding, speed, strokes). Errors and warnings with stable codes. |
 | `SurfacePoint`, `SurfaceShape`, `SphereShape` | `Geometry/` | Lat/lon ↔ vectors, projection onto the surface, great-circle math. Shapes sit behind a protocol for M3. |
-| `Playfield` | `Geometry/Playfield.swift` | Shape + rotation as seen from the player: world normal and position at time t, angle from front, hit zone and targetable checks, far side, final-approach times (`approach`), projecting placement-frame or object-local points to the surface |
+| `Playfield` | `Geometry/Playfield.swift` | Shape + rotation as seen from the player: world normal and position at time t, angle from front, play-area checks (`isInHitZone`, `maxAngleFromFrontDeg`), far side, projecting placement-frame or object-local points to the surface |
 | `PlaybackClock`, `ManualClock`, `BeatGrid` | `Timing/Clock.swift` | Clock protocol (the app's audio clock implements it); ms ↔ beats |
 | `RotationSchedule` | `Rotation/RotationSchedule.swift` | Orientation as a pure function of time, computed analytically per segment |
 | `Judgment`, `TapJudge` | `Gameplay/Judgment.swift` | Timing tiers; the input offset is applied here |
 | `ScoreKeeper` | `Gameplay/ScoreKeeper.swift` | Score, combo, max combo, accuracy, counts |
-| `GameSession` | `Gameplay/GameSession.swift` | One play-through: `advance(nowMs:inputs:)` handles inputs, then auto-misses. Returns `Event`s (judged or ignored-with-reason). Per-note `approaches` and `isOnFinalApproach` (a note exists only on the lap that ends at its time, DECISIONS D16). Tap notes only in M0. |
+| `GameSession` | `Gameplay/GameSession.swift` | One play-through: `advance(nowMs:inputs:)` handles inputs, then auto-misses. Returns `Event`s (judged or ignored-with-reason). Per-note `approaches` and `hasAppeared` (D16, D17). Tap notes only in M0. |
+| `NoteApproach` | `Gameplay/NoteApproach.swift` | Pop-up time and approach-ring progress and scale for a target (D17) |
 | `StrokePath`, `StrokeFollowScorer`, `RevealState` | `Gameplay/StrokeFollow.swift` | M1 logic, already tested: guide position, bucketed follow score, reveal level and animation |
 | `InputEvent`, `InputSource`, `ScriptedInputSource` | `Input/InputEvent.swift` | Device-independent input; scripted source for tests and autoplay |
 
@@ -64,7 +65,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 | `Scene/GlassObject` | Glass variants A/B/C, the shells, the rotating `surfaceRoot`, sort layers (`setSide`) |
 | `Scene/NoteVisuals` | Note entities (disc + collision + input target + hover) and looks; `JudgmentPopups` |
 | `Scene/PlacementRig` | Head anchor (`.once`) → placement entity 1.1 m ahead, slightly low |
-| `Scene/MeshBuilders`, `SceneMath` | Procedural meshes (fresnel-UV sphere, surface ribbons, zone circle); Double↔Float conversions |
+| `Scene/MeshBuilders`, `SceneMath` | Procedural meshes (fresnel-UV sphere, surface ribbons, approach-ring annulus); Double↔Float conversions |
 | `GlassLab/GlassLabView` | Rendering prototype scene (debug; spins on host time) |
 
 ### Per-frame flow (GameSceneController.frame)
@@ -73,7 +74,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 2. `surfaceRoot.orientation = playfield.orientation(atMs: now)`.
 3. Drain `GestureInputSource` and `ScriptedInputSource` (autoplay) → `session.advance(nowMs: now, inputs:)`.
 4. For each judged event, spawn a popup and refresh the HUD.
-5. For each note: hidden until its final approach, then faded in. Its state and angle from front set the input target on or off, its look, its far-side opacity and its sort layer.
+5. For each note: hidden until it pops up, then popped in. Its approach ring is scaled from `NoteApproach.ringScale`. Its state sets the input target, look, opacity and sort layer.
 6. When `session.isFinished(nowMs:)`, record the result, stop audio, and freeze the rotation.
 
 ### Input path

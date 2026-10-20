@@ -43,9 +43,9 @@ public struct GameSession: Sendable {
     public let playfield: Playfield
     /// Tap notes sorted by time.
     public let notes: [TapNote]
-    /// Each note's final approach (same order as `notes`): when it appears and when it may be targeted.
-    /// Before `appearMs` a note is on an earlier revolution and must not be shown.
-    public let approaches: [Playfield.Approach]
+    /// Each note's pop-up and approach ring timing (same order as `notes`). Before `appearMs` a note
+    /// is not shown and can't be targeted.
+    public let approaches: [NoteApproach]
     public private(set) var states: [NoteState]
     public private(set) var score = ScoreKeeper()
     /// Clock time after which the session is over (once every note is judged).
@@ -60,11 +60,10 @@ public struct GameSession: Sendable {
     public init(beatmap: Beatmap, tuning: Tuning, songDurationMs: Double? = nil) {
         self.beatmap = beatmap
         self.tuning = tuning
-        let playfield = Playfield(beatmap: beatmap)
-        self.playfield = playfield
+        self.playfield = Playfield(beatmap: beatmap)
         let sorted = beatmap.notes.sorted { $0.timeMs < $1.timeMs }
         self.notes = sorted
-        self.approaches = sorted.map { playfield.approach(of: $0.at, hitMs: $0.timeMs, tuning: tuning) }
+        self.approaches = sorted.map { NoteApproach(hitMs: $0.timeMs, tuning: tuning) }
         self.states = Array(repeating: .pending, count: sorted.count)
         self.indexByID = Dictionary(sorted.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         let lastNoteMs = sorted.last.map { $0.timeMs + tuning.goodWindowMs + tuning.inputOffsetMs } ?? 0
@@ -148,10 +147,11 @@ public struct GameSession: Sendable {
         indexByID[id].map { states[$0] }
     }
 
-    /// Whether note `index` is on its final approach (or later) at clock time `ms`. The app hides notes
-    /// until then; a note passing the front on an earlier revolution is not playable.
-    public func isOnFinalApproach(_ index: Int, atMs ms: Double) -> Bool {
-        ms - tuning.inputOffsetMs >= approaches[index].appearMs
+    /// Whether note `index` has popped up by raw clock time `ms`. The app hides notes until then.
+    /// (The object keeps turning, so a note's surface spot also passes the front on earlier laps;
+    /// it only exists from its pop-up.)
+    public func hasAppeared(_ index: Int, atMs ms: Double) -> Bool {
+        approaches[index].hasAppeared(atMs: ms - tuning.inputOffsetMs)
     }
 
     public var allNotesJudged: Bool { firstPendingIndex >= notes.count }

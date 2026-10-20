@@ -8,7 +8,7 @@ Several Claude Code instances work on this project in separate sessions that can
 
 A rhythm game for Apple Vision Pro, played on the surface of a transparent glass object (a sphere for now) that floats in a mixed-reality immersive space and rotates slowly in time with the music.
 
-- **Tap notes** sit on the surface and rotate with it. A note becomes hittable only inside a front-facing zone. The player looks at it and pinches on the beat.
+- **Tap notes** pop up at spots around the front of the object (the play area) and ride its slow rotation. A shrinking **approach ring** around each note closes exactly on the beat; the player looks at the note and pinches when the ring closes. (Owner's design, 2026-10-19: the ring is the timing cue, not the rotation. DECISIONS D17.)
 - **Stroke notes** (M1): look at the start point, pinch on time, hold, and drag along a guided path, following a moving guide. A completed stroke fills with its final color.
 - **The picture** (M2): all of a song's strokes together form a hidden artwork. At song end the object stops and shows it, vivid where the player did well.
 
@@ -16,7 +16,7 @@ A rhythm game for Apple Vision Pro, played on the surface of a transparent glass
 
 - **No eye tracking and no hand tracking.** Use only the system's look-and-pinch: entities with `CollisionComponent` + `InputTargetComponent` + `HoverEffectComponent`, receiving `SpatialTapGesture` / `DragGesture` targeted to entities. No ARKit hand tracking.
 - **Apps can't see gaze.** They only learn which entity was targeted when the pinch happens. Never design a mechanic that depends on gaze before a pinch.
-- **Eye targeting is imprecise.** Notes must be large, spaced apart, and slow in the hittable zone. Never put two notes close together at the same moment (the beatmap validator enforces this).
+- **Eye targeting is imprecise.** Notes must be large, spaced apart, and slow-moving. Never put two notes close together at the same moment (the beatmap validator enforces this).
 - **Pinch has latency.** Hit windows are generous and configurable, and there is a user input offset.
 - **The audio playback position is the master clock.** Rotation, note timing and judging all derive from it, never from frame counts or accumulated deltas.
 - **Stroke drags** are converted into the object's local space (which accounts for its rotation) and projected onto the surface before being compared with the guide.
@@ -30,7 +30,7 @@ A rhythm game for Apple Vision Pro, played on the surface of a transparent glass
 
 | Path | What |
 |---|---|
-| `RhythmCore/` | Pure Swift package (Foundation + simd only, no RealityKit/SwiftUI): beatmap model and validator, geometry, clock, rotation, hit zone, judging, scoring, stroke follow, reveal state, input protocol. All game logic goes here. |
+| `RhythmCore/` | Pure Swift package (Foundation + simd only, no RealityKit/SwiftUI): beatmap model and validator, geometry, clock, rotation, play area, note approach, judging, scoring, stroke follow, reveal state, input protocol. All game logic goes here. |
 | `RhythmCore/Sources/RhythmCore/Tuning.swift` | The single tunable settings file |
 | `SoundVision/` | visionOS app (SwiftUI + RealityKit). A synchronized folder: new files are picked up automatically, no pbxproj edits needed. |
 | `SoundVision.xcodeproj` | Hand-maintained project (see DECISIONS) |

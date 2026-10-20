@@ -46,62 +46,26 @@ public struct Playfield: Sendable {
         angleBetweenDeg(worldNormal(of: point, atMs: ms), Self.front)
     }
 
-    /// True while the point is inside the front-facing hittable zone.
+    /// True while the point is inside the front-facing play area.
     public func isInHitZone(_ point: SurfacePoint, atMs ms: Double, tuning: Tuning) -> Bool {
         angleFromFrontDeg(of: point, atMs: ms) <= tuning.hitZoneHalfAngleDeg
     }
 
-    /// True while the point should be an input target (slightly wider than the hit zone).
-    public func isTargetable(_ point: SurfacePoint, atMs ms: Double, tuning: Tuning) -> Bool {
-        angleFromFrontDeg(of: point, atMs: ms) <= tuning.targetableHalfAngleDeg
+    /// The largest angle from front that `point` reaches over [fromMs, toMs], sampled every `stepMs`
+    /// (and at both ends). Used to check a target stays in the play area while it's on screen.
+    public func maxAngleFromFrontDeg(of point: SurfacePoint, fromMs: Double, toMs: Double, stepMs: Double = 50) -> Double {
+        var worst = angleFromFrontDeg(of: point, atMs: toMs)
+        var t = fromMs
+        while t < toMs {
+            worst = max(worst, angleFromFrontDeg(of: point, atMs: t))
+            t += stepMs
+        }
+        return worst
     }
 
     /// True while the point faces away from the player (seen through the glass).
     public func isFarSide(_ point: SurfacePoint, atMs ms: Double) -> Bool {
         simd_dot(worldNormal(of: point, atMs: ms), Self.front) < 0
-    }
-
-    /// The latest time at or before `ms` when `point` was at least `angleDeg` from front, searching back
-    /// at most `lookbackMs`. Returns `ms - lookbackMs` if the point stayed closer than that throughout
-    /// (for example, a point near the rotation axis).
-    ///
-    /// Used for a note's final approach: every note comes past the front once per revolution, so a
-    /// note must only appear (and be targetable) on the pass that ends at its own time.
-    public func lastTimeBefore(_ ms: Double, point: SurfacePoint, atLeastDeg angleDeg: Double,
-                               lookbackMs: Double = 60_000, stepMs: Double = 50) -> Double {
-        if angleFromFrontDeg(of: point, atMs: ms) >= angleDeg { return ms }
-        var later = ms
-        var t = ms - stepMs
-        while t >= ms - lookbackMs {
-            if angleFromFrontDeg(of: point, atMs: t) >= angleDeg {
-                // Crossing is in (t, later]: bisect to sub-millisecond precision.
-                var lo = t, hi = later
-                while hi - lo > 0.5 {
-                    let mid = (lo + hi) / 2
-                    if angleFromFrontDeg(of: point, atMs: mid) >= angleDeg { lo = mid } else { hi = mid }
-                }
-                return lo
-            }
-            later = t
-            t -= stepMs
-        }
-        return ms - lookbackMs
-    }
-
-    /// When a target due at `hitMs` becomes visible (fading in, usually on the far side) and when it
-    /// becomes targetable, on its final approach.
-    public func approach(of point: SurfacePoint, hitMs: Double, tuning: Tuning) -> Approach {
-        Approach(
-            appearMs: lastTimeBefore(hitMs, point: point, atLeastDeg: tuning.noteAppearAngleDeg),
-            targetableFromMs: lastTimeBefore(hitMs, point: point, atLeastDeg: tuning.targetableHalfAngleDeg)
-        )
-    }
-
-    public struct Approach: Sendable, Equatable {
-        /// Before this the target is hidden: it hasn't started the pass that ends at its hit time.
-        public var appearMs: Double
-        /// From this the target may be an input target (within the targetable angle on its final pass).
-        public var targetableFromMs: Double
     }
 
     /// Projects an object-local position (for example a drag location already converted into the

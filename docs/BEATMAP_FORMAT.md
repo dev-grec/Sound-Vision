@@ -67,15 +67,15 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 
 `{ "id", "timeMs", "at": {lat, lon} }`. Each id must be unique across notes and strokes.
 
-**Placement rule:** a note must face the player at its own hit time. The surface point is given in the object's frame, so you have to undo the rotation. For a schedule that only rotates about +Y, the longitude facing the player at time t is **lon = −θ(t)**, where θ(t) is the total rotation in degrees so far.
+**Placement rule:** a note pops up `Tuning.approachMs` (1500 ms) before its hit time, and its approach ring closes on it at `timeMs`. From pop-up until its Good window closes it must stay inside the **play area**: within `Tuning.hitZoneHalfAngleDeg` (45°) of the direction toward the player. Spread notes around the play area; they don't all need to be at the center. The rotation keeps carrying a note while it's on screen (18° over 1.5 s at 12°/s, toward +X for a +Y rotation), so a note placed far toward the side it comes from may start outside the area.
+
+To place a note at a given spot in the player's view at its hit time, you need to undo the rotation, because surface points are given in the object's frame. The surface point is given in the object's frame, so you have to undo the rotation. For a schedule that only rotates about +Y, the point that is x degrees right of front and at latitude y at time t is **lon = x − θ(t)**, lat = y, where θ(t) is the total rotation in degrees so far.
 
 > Test map: 120 BPM (500 ms per beat), 6°/beat until beat 64, then 4°/beat.
-> A note at 4000 ms is beat 8, so θ = 48° and lon = -48.
-> A note at 34000 ms is beat 68, so θ = 384 + 4×4 = 400°, which is 40° after wrapping, so lon = -40.
+> A note at 4000 ms is beat 8, so θ = 48°. To show it 15° left of front and 20° up: lon = -15 - 48 = -63, lat = 20.
+> A note at 34000 ms is beat 68, so θ = 384 + 4×4 = 400°, which is 40° after wrapping. At front center: lon = -40.
 
-**Laps:** the object keeps turning, so every surface point passes the front once per revolution (30 s at 12°/s). A note is shown and targetable only on its *final approach*: it fades in when, counting back from its hit time, it was last `Tuning.noteAppearAngleDeg` (150°) from front. On earlier laps it's hidden. You can reuse a surface spot for a later note, as long as the two notes aren't targetable at the same time.
-
-Keep latitude modest (about ±15°). The angle from zone center at hit time must be within `Tuning.noteComfortAngleDeg` (20°) to avoid a warning, and within `Tuning.hitZoneHalfAngleDeg` (30°) to be hittable at all.
+**Laps:** the object keeps turning, so every surface point passes the front once per revolution (30 s at 12°/s). A note exists only from its pop-up, so a later note's spot passing the front on an earlier lap is harmless. You can reuse a surface spot, as long as the two notes aren't on screen at the same time.
 
 ## Strokes
 
@@ -83,7 +83,7 @@ Keep latitude modest (about ±15°). The angle from zone center at hit time must
 
 - `path` has at least two points. The guide moves along the great-circle arcs between consecutive points at constant angular speed, from `startMs` to `startMs + durationMs`.
 - Keep each segment under 170°, since near-antipodal arcs are ambiguous.
-- The start point must be in the hit zone at `startMs`. The guide should stay in the zone for the whole stroke, otherwise you get a warning. To keep a stroke on the front, let the path drift against the rotation (for a +Y rotation, decrease longitude by the rotation over the stroke's duration).
+- The start point pops up like a tap note and must be in the play area from its pop-up until `startMs`. The guide should stay in the play area for the whole stroke, otherwise you get a warning. To keep a stroke on the front, let the path drift against the rotation (for a +Y rotation, decrease longitude by the rotation over the stroke's duration).
 - `color` is the hue the stroke fills with when completed well.
 
 ## Validator rules
@@ -97,15 +97,14 @@ Keep latitude modest (about ±15°). The angle from zone center at hit time must
 - duplicate or empty ids
 - non-finite numbers, negative times, latitude outside ±90
 - a note or stroke after the end of a generated click track
-- a note outside the hit zone at its time
-- a stroke with fewer than two points, a non-positive duration, a segment of 170° or more, or a start outside the zone
+- a note leaving the play area while on screen (pop-up to window close)
+- a stroke with fewer than two points, a non-positive duration, a segment of 170° or more, or a start outside the play area
 - overlapping strokes
-- **crowded targets**: two targets (notes or stroke starts) that are targetable at the same time and less than `Tuning.minNoteSeparationDeg` (25°) apart on the surface. A target is targetable from its final approach within `targetableHalfAngleDeg` (40°) until its Good window closes. At 12°/s that's about 3.5 s, so same-latitude notes 2 s apart (24°) are too close. The object is rigid, so their separation never changes as it turns.
+- **crowded targets**: two targets (notes or stroke starts) on screen at the same time (pop-up to Good window close) and less than `Tuning.minNoteSeparationDeg` (25°) apart on the surface. With a 1.5 s approach, notes 1 s apart overlap and must be spread out; notes 2 s apart don't overlap. The object is rigid, so their separation never changes as it turns.
 
 **Warnings** (the map loads):
 
-- a note more than 20° from zone center at its time
-- a stroke guide leaving the zone
+- a stroke guide leaving the play area
 - a tap note during a stroke
 
 ## Versioning

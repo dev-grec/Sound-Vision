@@ -97,15 +97,13 @@ public enum BeatmapValidator {
             if note.timeMs < 0 { error("note.negativeTime", "timeMs is negative", note.id) }
             if let d = durationMs, note.timeMs > d { error("note.afterEnd", "timeMs is after the song ends (\(fmt(d)) ms)", note.id) }
             if abs(note.at.lat) > 90 { error("note.latitude", "lat must be between -90 and 90", note.id) }
-            let angle = playfield.angleFromFrontDeg(of: note.at, atMs: note.timeMs)
-            if angle > tuning.hitZoneHalfAngleDeg {
+            // On screen from pop-up until its window closes; it must stay in the play area throughout.
+            let worst = playfield.maxAngleFromFrontDeg(of: note.at, fromMs: note.timeMs - tuning.approachMs,
+                                                       toMs: note.timeMs + tuning.goodWindowMs)
+            if worst > tuning.hitZoneHalfAngleDeg {
                 error("note.outsideZone",
-                      "is \(fmt(angle))° from zone center at its hit time; the hit zone is ±\(fmt(tuning.hitZoneHalfAngleDeg))°",
+                      "reaches \(fmt(worst))° from front while on screen; the play area is ±\(fmt(tuning.hitZoneHalfAngleDeg))°",
                       note.id)
-            } else if angle > tuning.noteComfortAngleDeg {
-                warning("note.offCenter",
-                        "is \(fmt(angle))° from zone center at its hit time (comfortable is ≤\(fmt(tuning.noteComfortAngleDeg))°)",
-                        note.id)
             }
         }
 
@@ -124,18 +122,19 @@ public enum BeatmapValidator {
             if path.longestSegmentDeg >= 170 {
                 error("stroke.segmentTooLong", "a path segment spans \(fmt(path.longestSegmentDeg))°; keep segments under 170° so the arc is unambiguous", stroke.id)
             }
-            let startAngle = playfield.angleFromFrontDeg(of: stroke.path[0], atMs: stroke.startMs)
+            let startAngle = playfield.maxAngleFromFrontDeg(of: stroke.path[0], fromMs: stroke.startMs - tuning.approachMs,
+                                                            toMs: stroke.startMs)
             if startAngle > tuning.hitZoneHalfAngleDeg {
-                error("stroke.startOutsideZone", "start point is \(fmt(startAngle))° from zone center at startMs", stroke.id)
+                error("stroke.startOutsideZone", "start point reaches \(fmt(startAngle))° from front between its pop-up and startMs", stroke.id)
             }
-            // The guide should stay in the hit zone for the whole stroke.
+            // The guide should stay in the play area for the whole stroke.
             let scorer = StrokeFollowScorer(stroke: stroke, tuning: tuning)
             let worst = (0...20).map { i -> Double in
                 let t = stroke.startMs + stroke.durationMs * Double(i) / 20
                 return playfield.angleFromFrontDeg(of: scorer.guidePoint(atMs: t), atMs: t)
             }.max() ?? 0
             if worst > tuning.hitZoneHalfAngleDeg {
-                warning("stroke.leavesZone", "the guide reaches \(fmt(worst))° from zone center during the stroke", stroke.id)
+                warning("stroke.leavesZone", "the guide reaches \(fmt(worst))° from front during the stroke", stroke.id)
             }
         }
 
@@ -150,15 +149,12 @@ public enum BeatmapValidator {
             }
         }
 
-        // Crowding: targets that are targetable at the same time must be far apart on the surface.
-        // A target is targetable from its final approach (see Playfield.approach) until its window closes.
-        // The object is rigid, so the angle between two surface points never changes as it rotates;
-        // comparing surface positions is enough. Every point passes the front once per revolution, but a
-        // note is only shown on its final approach, so earlier passes don't count.
+        // Crowding: targets on screen at the same time (pop-up to window close) must be far apart on the
+        // surface. The object is rigid, so the angle between two surface points never changes as it
+        // rotates; comparing surface positions is enough.
         struct Target { var id: String; var fromMs: Double; var toMs: Double; var at: SurfacePoint }
         func target(_ id: String, _ ms: Double, _ at: SurfacePoint) -> Target {
-            let approach = playfield.approach(of: at, hitMs: ms, tuning: tuning)
-            return Target(id: id, fromMs: approach.targetableFromMs, toMs: ms + tuning.goodWindowMs, at: at)
+            Target(id: id, fromMs: ms - tuning.approachMs, toMs: ms + tuning.goodWindowMs, at: at)
         }
         let targets = (map.notes.filter { $0.timeMs.isFinite && $0.at.isFinite }.map { target($0.id, $0.timeMs, $0.at) }
             + map.strokes.filter { $0.startMs.isFinite && ($0.path.first?.isFinite ?? false) }.map { target($0.id, $0.startMs, $0.path[0]) })
@@ -171,7 +167,7 @@ public enum BeatmapValidator {
                     let later = targets[i].toMs > targets[j].toMs ? targets[i] : targets[j]
                     let earlier = later.id == targets[i].id ? targets[j] : targets[i]
                     error("targets.crowded",
-                          "is only \(fmt(sep))° from \(earlier.id) while both are targetable; needs ≥\(fmt(tuning.minNoteSeparationDeg))°",
+                          "is only \(fmt(sep))° from \(earlier.id) while both are on screen; needs ≥\(fmt(tuning.minNoteSeparationDeg))°",
                           later.id)
                 }
                 j += 1
