@@ -1,5 +1,8 @@
+import os
 import RealityKit
 import RhythmCore
+
+private let log = Logger(subsystem: "com.devgrec.SoundVision", category: "input")
 
 /// Tags an entity as a gameplay target, so a gesture on it can be mapped to a note or stroke ID.
 struct GameTargetComponent: Component {
@@ -22,7 +25,9 @@ final class GestureInputSource: @MainActor InputSource {
 
     /// A pinch (SpatialTapGesture) on `entity` or one of its descendants.
     func tap(on entity: Entity) {
-        pending.append(.tap(targetID: Self.targetID(of: entity), atMs: clock.nowMs))
+        let event = InputEvent.tap(targetID: Self.targetID(of: entity), atMs: clock.nowMs)
+        log.info("pinch gesture on \(entity.name, privacy: .public) at \(Int(event.atMs)) ms")
+        pending.append(event)
     }
 
     func pollEvents(nowMs: Double) -> [InputEvent] {

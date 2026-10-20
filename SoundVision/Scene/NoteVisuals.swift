@@ -59,22 +59,31 @@ enum NoteVisuals {
     }
 }
 
-/// Floating "Perfect / Great / Good / Miss" text that rises and fades, timed by the master clock.
+/// Floating feedback text that rises and fades, timed by the master clock: the judgment of a hit, or
+/// "Early"/"Late" for a pinch on a note outside its timing window (ignored, no penalty, but the player
+/// must see that the pinch registered).
 @MainActor
 final class JudgmentPopups {
+    enum Kind: Hashable {
+        case judgment(Judgment)
+        case early, late
+
+        static let all: [Kind] = Judgment.allCases.map { .judgment($0) } + [.early, .late]
+    }
+
     let root = Entity()
-    private var templates: [Judgment: Entity] = [:]
+    private var templates: [Kind: Entity] = [:]
     private var live: [(entity: Entity, spawnMs: Double, start: SIMD3<Float>)] = []
 
     init() {
         root.name = "JudgmentPopups"
-        for j in Judgment.allCases {
-            templates[j] = Self.makeTemplate(j)
+        for kind in Kind.all {
+            templates[kind] = Self.makeTemplate(kind)
         }
     }
 
-    func spawn(_ judgment: Judgment, at position: SIMD3<Float>, nowMs: Double) {
-        guard let entity = templates[judgment]?.clone(recursive: true) else { return }
+    func spawn(_ kind: Kind, at position: SIMD3<Float>, nowMs: Double) {
+        guard let entity = templates[kind]?.clone(recursive: true) else { return }
         entity.position = position
         root.addChild(entity)
         live.append((entity, nowMs, position))
@@ -93,15 +102,17 @@ final class JudgmentPopups {
         }
     }
 
-    private static func makeTemplate(_ j: Judgment) -> Entity {
-        let color: UIColor = switch j {
-        case .perfect: UIColor(red: 0.45, green: 1, blue: 1, alpha: 1)
-        case .great: UIColor(red: 0.5, green: 1, blue: 0.55, alpha: 1)
-        case .good: UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 1)
-        case .miss: UIColor(red: 1, green: 0.35, blue: 0.35, alpha: 1)
+    private static func makeTemplate(_ kind: Kind) -> Entity {
+        let (label, color, size): (String, UIColor, CGFloat) = switch kind {
+        case .judgment(.perfect): ("Perfect", UIColor(red: 0.45, green: 1, blue: 1, alpha: 1), 0.032)
+        case .judgment(.great): ("Great", UIColor(red: 0.5, green: 1, blue: 0.55, alpha: 1), 0.032)
+        case .judgment(.good): ("Good", UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 1), 0.032)
+        case .judgment(.miss): ("Miss", UIColor(red: 1, green: 0.35, blue: 0.35, alpha: 1), 0.032)
+        case .early: ("Early", UIColor(white: 0.9, alpha: 1), 0.022)
+        case .late: ("Late", UIColor(white: 0.9, alpha: 1), 0.022)
         }
-        let mesh = MeshResource.generateText(j.displayName, extrusionDepth: 0.002,
-                                             font: .systemFont(ofSize: 0.032, weight: .heavy))
+        let mesh = MeshResource.generateText(label, extrusionDepth: 0.002,
+                                             font: .systemFont(ofSize: size, weight: .heavy))
         let text = ModelEntity(mesh: mesh, materials: [UnlitMaterial(color: color)])
         text.position = -mesh.bounds.center // center the text on its parent
         let holder = Entity()

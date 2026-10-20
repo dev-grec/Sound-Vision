@@ -36,7 +36,15 @@ struct GameHUDView: View {
             if let error {
                 Text(error).font(.headline).foregroundStyle(.red)
             } else {
-                Text(hud.title).font(.headline)
+                HStack {
+                    Text(hud.title).font(.headline)
+                    if hud.autoplay {
+                        Text("AUTOPLAY")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(.orange, in: Capsule())
+                    }
+                }
                 HStack(spacing: 18) {
                     stat("Score", "\(hud.score)")
                     stat("Combo", "\(hud.combo)")

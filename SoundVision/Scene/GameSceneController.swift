@@ -22,6 +22,7 @@ final class GameSceneController {
         var accuracy = 1.0
         var judged = 0
         var total = 0
+        var autoplay = false
         var message = "Get ready…"
         var finished = false
     }
@@ -96,8 +97,8 @@ final class GameSceneController {
         content.add(rig.anchor)
         self.rig = rig
         self.glass = glass
-        hud = HUD(title: map.meta.title, total: session.notes.count,
-                  message: model.autoplay ? "Autoplay" : "Look at a glowing note and pinch on the beat")
+        hud = HUD(title: map.meta.title, total: session.notes.count, autoplay: model.autoplay,
+                  message: "Pinch a glowing note as it reaches the center, on the click")
 
         updateSubscription = content.subscribe(to: SceneEvents.Update.self) { [weak self] _ in
             self?.frame()
@@ -115,6 +116,13 @@ final class GameSceneController {
             }
         }
         return nil
+    }
+
+    private func spawnPopup(_ kind: JudgmentPopups.Kind, forNote id: String, session: GameSession, now: Double) {
+        guard let note = session.notes.first(where: { $0.id == id }) else { return }
+        let pos = session.playfield.worldPosition(of: note.at, atMs: now)
+        let normal = session.playfield.worldNormal(of: note.at, atMs: now)
+        popups.spawn(kind, at: SIMD3<Float>(pos + normal * 0.07), nowMs: now)
     }
 
     func applyVariant(_ variant: GlassVariant) {
@@ -156,14 +164,20 @@ final class GameSceneController {
         for event in events {
             switch event {
             case .judged(let id, let judgment, let delta, let combo):
-                if let i = session.notes.firstIndex(where: { $0.id == id }) {
-                    let pos = session.playfield.worldPosition(of: session.notes[i].at, atMs: now)
-                    let normal = session.playfield.worldNormal(of: session.notes[i].at, atMs: now)
-                    popups.spawn(judgment, at: SIMD3<Float>(pos + normal * 0.07), nowMs: now)
+                spawnPopup(.judgment(judgment), forNote: id, session: session, now: now)
+                if let delta {
+                    log.info("hit \(id, privacy: .public): \(judgment.rawValue, privacy: .public), delta \(Int(delta)) ms, combo \(combo)")
+                } else {
+                    log.debug("miss \(id, privacy: .public)")
                 }
-                log.debug("\(id, privacy: .public) \(judgment.rawValue, privacy: .public) delta \(delta ?? .nan) combo \(combo)")
             case .ignored(let target, let reason):
-                log.debug("ignored tap on \(target ?? "nothing", privacy: .public): \(String(describing: reason), privacy: .public)")
+                // A pinch on a note outside its window: no penalty, but show that it registered.
+                if case .outsideTimingWindow(let delta) = reason, let target {
+                    spawnPopup(delta < 0 ? .early : .late, forNote: target, session: session, now: now)
+                } else if case .outsideHitZone = reason, let target {
+                    spawnPopup(.early, forNote: target, session: session, now: now)
+                }
+                log.info("pinch on \(target ?? "nothing", privacy: .public) ignored: \(String(describing: reason), privacy: .public)")
             }
         }
         if !events.isEmpty { refreshHUD(session) }
