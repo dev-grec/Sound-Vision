@@ -9,7 +9,7 @@ struct SoundVisionApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: AppModel.launcherWindowID) {
             LauncherView()
                 .environment(model)
         }

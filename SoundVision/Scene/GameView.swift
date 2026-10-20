@@ -5,6 +5,7 @@ import SwiftUI
 /// The play scene: the rotating glass sphere with tap notes, a floating HUD, and look-and-pinch input.
 struct GameView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     @State private var controller = GameSceneController()
     @State private var loadError: String?
 
@@ -15,7 +16,10 @@ struct GameView: View {
             controller.applyVariant(model.glassVariant)
         } attachments: {
             Attachment(id: "hud") {
-                GameHUDView(hud: controller.hud, error: loadError)
+                // The launcher window is hidden during play, so the HUD carries the way out.
+                GameHUDView(hud: controller.hud, error: loadError) {
+                    Task { await dismissImmersiveSpace() }
+                }
             }
         }
         .gesture(
@@ -32,12 +36,20 @@ struct GameView: View {
                 .onEnded { value in controller.handleDragEnded(value) }
         )
         .onDisappear { controller.stop() }
+        .onChange(of: controller.hud.finished) { _, finished in
+            guard finished, model.exitOnFinish else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await dismissImmersiveSpace()
+            }
+        }
     }
 }
 
 struct GameHUDView: View {
     var hud: GameSceneController.HUD
     var error: String?
+    var exit: () -> Void
 
     var body: some View {
         VStack(spacing: 6) {
@@ -61,6 +73,9 @@ struct GameHUDView: View {
                 }
                 Text(hud.message).font(.caption).foregroundStyle(.secondary)
             }
+            Button(hud.finished || error != nil ? "Back to Menu" : "Exit", action: exit)
+                .font(.caption)
+                .controlSize(.small)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 12)

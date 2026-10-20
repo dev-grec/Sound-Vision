@@ -6,6 +6,7 @@ import RhythmCore
 @Observable
 final class AppModel {
     static let immersiveSpaceID = "PlaySpace"
+    static let launcherWindowID = "Launcher"
 
     enum Mode: String {
         case game
@@ -18,6 +19,14 @@ final class AppModel {
 
     var mode: Mode = .game
     var spaceState: SpaceState = .closed
+    /// True while the launcher window is dismissed for play (ImmersiveRootView hides it in game mode so
+    /// it doesn't show through the glass, and reopens it when the space closes).
+    var launcherHidden = false
+    /// The `-autostart` launch argument has been acted on (so reopening the launcher doesn't restart).
+    var autostartDone = false
+    /// Debug: close the immersive space a moment after the song ends (launch argument -exitOnFinish YES),
+    /// so scripted runs end back in the launcher with the result.
+    var exitOnFinish = false
 
     /// Game-feel settings. The launcher edits `inputOffsetMs`; everything else uses the defaults in
     /// RhythmCore's Tuning.swift. (Persisting overrides is M2.)
@@ -46,6 +55,7 @@ final class AppModel {
         //   simctl launch <device> com.devgrec.SoundVision -autostart game -autoplay YES -glassVariant C
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: "autoplay") { autoplay = true }
+        if defaults.bool(forKey: "exitOnFinish") { exitOnFinish = true }
         autoplayEarlyMs = defaults.double(forKey: "autoplayEarlyMs")
         if defaults.object(forKey: "randomSliders") != nil { randomSliders = defaults.bool(forKey: "randomSliders") }
         if let seed = defaults.string(forKey: "sliderSeed"), let value = UInt64(seed) { sliderSeed = value }
