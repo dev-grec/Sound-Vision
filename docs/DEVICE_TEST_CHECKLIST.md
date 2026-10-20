@@ -54,8 +54,20 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 
 - [ ] Click track plays with no crackle, and accents land on beat 1.
 - [ ] A/V sync: approach rings close exactly on the click (AudioEngineClock subtracts `outputLatency`; check it isn't off by a constant).
-- [ ] Rotation is smooth, with no stepping from the roughly 10 ms render-buffer clock updates.
+- [ ] Rotation is smooth, with no stepping from the render-buffer clock updates (now about 5 ms, interpolated both ways).
 - [ ] Song end: the rotation freezes and the result shows in the launcher.
+
+## Latency (DECISIONS D22)
+
+Read the log with `log stream --predicate 'subsystem == "com.devgrec.SoundVision"'` (or Console.app with the headset connected) while playing.
+- [ ] **Which gesture judges notes.** Each hit line ends with "via press (drag)" or "via release (tap)". Expect "via press" for nearly every hit. If taps are judging notes, the drag press isn't arriving first, and those notes are judged a whole pinch late.
+- [ ] **Event-time stamping works.** "drag began … (event time, N ms before callback)": N should be small and steady (a few ms to a few tens of ms). "event time too old" or "in the future" means `DragGesture.Value.time` isn't usable on device; then set `useInputEventTimestamps` false and note it in D22. The end-of-play "input stats" line summarizes presses, mean and max backdating, and fallbacks.
+- [ ] **Timing jitter A/B.** Play the same section twice, once plain and once launched with `-inputEventTimestamps NO`, pinching on the beat. Compare the spread of "delta" values in the hit lines. Event-time stamping should give a tighter spread; if not, say so in D22.
+- [ ] **Audio session.** The "audio started" line shows the granted IO buffer (5 ms asked) and output latency. Note both here. Any crackle with the smaller buffer?
+- [ ] **Clock health.** The "clock stats" line at the end: held backward steps should be rare and tiny (well under 1 ms). Many or large ones mean the render timestamp's host time doesn't mean what D2 assumes.
+- [ ] **Hit tick.** It sounds at the pinch, is distinct from the metronome, and doesn't feel late. Does it help or distract? Volume (`hitSoundVolume` 0.35; `-hitSoundVolume 0` turns it off).
+- [ ] **Feel A/B for judging on arrival.** Compare with `-processInputOnArrival NO`. Expect little visible difference; the tick may feel a touch quicker with it on.
+- [ ] **Delivery grace.** An unhit note now turns Miss 50 ms after its window (`inputDeliveryGraceMs`). Not noticeable? Late-but-in-window pinches no longer get lost?
 
 ## Not yet implemented (listed so it isn't forgotten)
 

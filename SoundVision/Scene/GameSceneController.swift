@@ -80,6 +80,7 @@ final class GameSceneController {
         }
         let session = GameSession(beatmap: map, tuning: tuning, songDurationMs: clock.durationMs)
         self.session = session
+        gestures.tuning = tuning
         if model.autoplay {
             autoplay = .autoplay(for: map, tuning: tuning, jitterMs: -model.autoplayEarlyMs)
         }
@@ -158,6 +159,7 @@ final class GameSceneController {
     func handleTap(on entity: Entity) {
         guard !stopped else { return }
         gestures.tap(on: entity)
+        processInputOnArrival()
     }
 
     /// A DragGesture update (pinch-and-hold): the press, then movement.
@@ -172,7 +174,8 @@ final class GameSceneController {
         }
         let point = viewPoint(of: value, shape: session.playfield.shape)
         lastDragPoint = point
-        gestures.drag(on: value.entity, point: point)
+        gestures.drag(on: value.entity, point: point, eventTime: value.gestureValue.time)
+        processInputOnArrival()
     }
 
     func handleDragEnded(_ value: EntityTargetValue<DragGesture.Value>) {
@@ -180,7 +183,16 @@ final class GameSceneController {
         let point = viewPoint(of: value, shape: session.playfield.shape)
         dragTracker = nil
         lastDragPoint = nil
-        gestures.dragEnded(point: point)
+        gestures.dragEnded(point: point, eventTime: value.gestureValue.time)
+        processInputOnArrival()
+    }
+
+    /// Runs the game step now rather than at the next frame (DECISIONS D22), so the hit sound starts
+    /// from the callback and entity changes are in place for the next render. Judging is the same either
+    /// way: it depends only on the stamped time, and every step reads the master clock.
+    private func processInputOnArrival() {
+        guard session?.tuning.processInputOnArrival == true else { return }
+        frame()
     }
 
     /// The drag location on the sphere in view coordinates, from hand movement since the pinch
@@ -198,6 +210,7 @@ final class GameSceneController {
         updateSubscription?.cancel()
         updateSubscription = nil
         clock.stop()
+        gestures.logStats()
     }
 
     // MARK: Frame
@@ -226,14 +239,16 @@ final class GameSceneController {
                 default: .judgment(judgment)
                 }
                 spawnPopup(kind, forNote: id, session: session, now: now)
+                if judgment != .miss { clock.hitSound.play(volume: tuning.hitSoundVolume) }
                 if let delta {
-                    log.info("hit \(id, privacy: .public): \(judgment.rawValue, privacy: .public), delta \(Int(delta)) ms, combo \(combo)")
+                    log.info("hit \(id, privacy: .public): \(judgment.rawValue, privacy: .public), delta \(Int(delta)) ms, combo \(combo), \(Self.pressDescription(of: id, in: inputs, now: now), privacy: .public)")
                 } else {
                     log.debug("miss \(id, privacy: .public)")
                 }
             case .sliderStarted(let id, let head, let delta):
                 spawnPopup(.judgment(head), forNote: id, session: session, now: now)
-                log.info("slider \(id, privacy: .public) head \(head.rawValue, privacy: .public), delta \(Int(delta)) ms")
+                clock.hitSound.play(volume: tuning.hitSoundVolume)
+                log.info("slider \(id, privacy: .public) head \(head.rawValue, privacy: .public), delta \(Int(delta)) ms, \(Self.pressDescription(of: id, in: inputs, now: now), privacy: .public)")
             case .sliderEnded(let id, let judgment, let finishDelta, let combo):
                 if let i = session.notes.firstIndex(where: { $0.id == id }) {
                     let note = session.notes[i]
@@ -307,6 +322,19 @@ final class GameSceneController {
         }
     }
 
+    /// For the log: which input judged note `id` (the drag press or the tap release) and how long after
+    /// its stamped time this step ran, i.e. the input's feedback latency on the audio clock.
+    private static func pressDescription(of id: String, in inputs: [InputEvent], now: Double) -> String {
+        for input in inputs {
+            switch input {
+            case .dragBegan(id?, _, let atMs): return "via press (drag), judged \(Int((now - atMs).rounded())) ms after it"
+            case .tap(id?, let atMs): return "via release (tap), judged \(Int((now - atMs).rounded())) ms after it"
+            default: continue
+            }
+        }
+        return "via unknown input"
+    }
+
     private func refreshHUD(_ session: GameSession) {
         hud.score = session.score.score
         hud.combo = session.score.combo
@@ -319,6 +347,7 @@ final class GameSceneController {
         hud.finished = true
         hud.message = "Song complete"
         clock.stop() // rotation freezes where the song ended
+        gestures.logStats()
         let result = GameResult(title: session.beatmap.meta.title, score: session.score.score,
                                 accuracy: session.score.accuracy, maxCombo: session.score.maxCombo,
                                 counts: session.score.counts, totalNotes: session.notes.count)
