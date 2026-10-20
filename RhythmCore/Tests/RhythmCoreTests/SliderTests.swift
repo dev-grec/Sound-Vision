@@ -282,8 +282,9 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
         var s = session([note])
         _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
         _ = s.advance(nowMs: 5000, inputs: drag(note, pace: 0.5, until: 0.5)) // only halfway by 5000
-        #expect(s.advance(nowMs: 5260, inputs: []).isEmpty)                  // still inside the Good window
-        let events = s.advance(nowMs: 5300, inputs: [])
+        let closes = 5000 + tuning.sliderEndGoodWindowMs + tuning.inputDeliveryGraceMs
+        #expect(s.advance(nowMs: closes, inputs: []).isEmpty)                // Good window plus delivery grace
+        let events = s.advance(nowMs: closes + 1, inputs: [])
         #expect(events == [.sliderEnded(noteID: "s", judgment: .miss, finishDeltaMs: nil, combo: 0)])
     }
 

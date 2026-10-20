@@ -25,6 +25,22 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Range of the user-facing offset slider.
     public var inputOffsetRangeMs: ClosedRange<Double> = -250...250
 
+    // MARK: Input latency (DECISIONS D21)
+
+    /// Stamp drag events (the pinch press, movement, release) with the time the system says the event
+    /// happened (`DragGesture.Value.time`), carried back onto the audio clock, instead of the time the
+    /// callback ran. Removes the gesture delivery delay and its jitter from judging. [device]
+    public var useInputEventTimestamps: Bool = true
+    /// An event timestamp older than this when its callback runs is treated as unreliable, and the event
+    /// is stamped on arrival instead. [device]
+    public var maxInputEventAgeMs: Double = 150
+    /// Auto-misses and slider timeouts wait this long after their window closes, so a pinch that happened
+    /// inside the window still counts when its callback arrives a little after. [device]
+    public var inputDeliveryGraceMs: Double = 50
+    /// Run the game step (judge, update notes, play the hit sound) straight from the gesture callback
+    /// instead of waiting for the next frame. Judging is unchanged: it only depends on the stamped time.
+    public var processInputOnArrival: Bool = true
+
     // MARK: Play area
 
     /// The play area: the part of the object's front, within this angle of the direction toward the
@@ -124,6 +140,9 @@ public struct Tuning: Codable, Sendable, Equatable {
 
     /// How long a judgment popup stays visible, in ms.
     public var judgmentPopupMs: Double = 700
+    /// Volume (0...1) of the short tick played the moment a pinch hits a note, synthesized at runtime.
+    /// Sound is the fastest feedback channel; 0 turns it off. [device]
+    public var hitSoundVolume: Double = 0.35
 
     public init() {}
 

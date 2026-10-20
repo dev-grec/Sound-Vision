@@ -93,7 +93,9 @@ public struct GameSession: Sendable {
         self.approaches = sorted.map { NoteApproach(hitMs: $0.timeMs, tuning: tuning) }
         self.states = Array(repeating: .pending, count: sorted.count)
         self.indexByID = Dictionary(sorted.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let lastNoteMs = sorted.map { $0.endMs + max(tuning.goodWindowMs, tuning.sliderEndGoodWindowMs) + tuning.inputOffsetMs }.max() ?? 0
+        let lastNoteMs = sorted.map {
+            $0.endMs + max(tuning.goodWindowMs, tuning.sliderEndGoodWindowMs) + tuning.inputOffsetMs + tuning.inputDeliveryGraceMs
+        }.max() ?? 0
         let duration = songDurationMs ?? beatmap.definedDurationMs ?? lastNoteMs
         self.endMs = max(duration, lastNoteMs)
     }
@@ -201,15 +203,19 @@ public struct GameSession: Sendable {
     }
 
     /// A held slider whose knob hasn't reached the end by the close of its finish window is a Miss.
+    /// Like auto-misses, this waits `inputDeliveryGraceMs` for drag samples still on their way (D21).
     private mutating func finishSlidersPastTheirEnd(nowMs: Double) -> [Event] {
-        let judgedNow = nowMs - tuning.inputOffsetMs
+        let judgedNow = nowMs - tuning.inputOffsetMs - tuning.inputDeliveryGraceMs
         return sliders.keys.sorted()
             .filter { judgedNow > notes[$0].endMs + tuning.sliderEndGoodWindowMs }
             .map { finishSlider($0, atMs: nowMs) }
     }
 
+    /// An unhit note becomes a Miss once its Good window has closed and `inputDeliveryGraceMs` more has
+    /// passed: inputs are stamped with when the pinch happened (D21), so one can arrive after its window
+    /// closed and still belong inside it.
     private mutating func declareMisses(nowMs: Double) -> [Event] {
-        let judgedNow = nowMs - tuning.inputOffsetMs
+        let judgedNow = nowMs - tuning.inputOffsetMs - tuning.inputDeliveryGraceMs
         var events: [Event] = []
         var i = firstPendingIndex
         while i < notes.count, notes[i].timeMs + tuning.goodWindowMs < judgedNow {

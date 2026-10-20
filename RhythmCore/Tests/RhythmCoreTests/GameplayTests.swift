@@ -122,13 +122,15 @@ import Testing
 
     @Test func unhitNoteBecomesMissAfterWindow() {
         var s = makeSession([Fixtures.note("n1", atMs: 4000), Fixtures.note("n2", atMs: 6000)])
-        #expect(s.advance(nowMs: 4170, inputs: []).isEmpty) // window still open (exactly at its edge)
-        let events = s.advance(nowMs: 4171, inputs: [])
+        // The Good window closes at 4170; the miss waits the delivery grace on top (D21).
+        let closes = 4170 + tuning.inputDeliveryGraceMs
+        #expect(s.advance(nowMs: closes, inputs: []).isEmpty) // exactly at the edge: still open
+        let events = s.advance(nowMs: closes + 1, inputs: [])
         #expect(events == [.judged(noteID: "n1", judgment: .miss, deltaMs: nil, combo: 0)])
-        #expect(s.state(ofNote: "n1") == .missed(atMs: 4171, deltaMs: nil))
+        #expect(s.state(ofNote: "n1") == .missed(atMs: closes + 1, deltaMs: nil))
         #expect(s.state(ofNote: "n2") == .pending)
         // A late tap after the miss is ignored.
-        let late = s.advance(nowMs: 4200, inputs: [.tap(targetID: "n1", atMs: 4200)])
+        let late = s.advance(nowMs: closes + 30, inputs: [.tap(targetID: "n1", atMs: closes + 30)])
         #expect(late == [.ignored(targetID: "n1", reason: .alreadyJudged)])
     }
 
@@ -137,6 +139,23 @@ import Testing
         // The tap arrived at 4160 but the frame that delivers it runs at 4190, after the window closed.
         let events = s.advance(nowMs: 4190, inputs: [.tap(targetID: "n1", atMs: 4160)])
         #expect(events == [.judged(noteID: "n1", judgment: .good, deltaMs: 160, combo: 1)])
+    }
+
+    @Test func backdatedPinchDeliveredAfterTheWindowClosedStillCounts() {
+        // D21: the pinch happened at 4165 (inside the window), its callback ran at 4205, after the window
+        // closed at 4170. A frame at 4200 ran in between; the delivery grace keeps the note open for it.
+        var s = makeSession([Fixtures.note("n1", atMs: 4000)])
+        #expect(s.advance(nowMs: 4200, inputs: []).isEmpty)
+        let events = s.advance(nowMs: 4205, inputs: [.dragBegan(targetID: "n1", point: nil, atMs: 4165)])
+        #expect(events == [.judged(noteID: "n1", judgment: .good, deltaMs: 165, combo: 1)])
+    }
+
+    @Test func zeroGraceMissesAtTheWindowEdge() {
+        var t = Tuning()
+        t.inputDeliveryGraceMs = 0
+        var s = makeSession([Fixtures.note("n1", atMs: 4000)], tuning: t)
+        #expect(s.advance(nowMs: 4170, inputs: []).isEmpty)
+        #expect(s.advance(nowMs: 4171, inputs: []) == [.judged(noteID: "n1", judgment: .miss, deltaMs: nil, combo: 0)])
     }
 
     @Test func missBreaksCombo() {
@@ -152,6 +171,7 @@ import Testing
     @Test func inputOffsetShiftsJudgingAndMisses() {
         var t = Tuning()
         t.inputOffsetMs = 100
+        t.inputDeliveryGraceMs = 0
         var s = makeSession([Fixtures.note("n1", atMs: 4000)], tuning: t)
         // With +100 ms offset the window closes at 4000 + 170 + 100 on the raw clock.
         #expect(s.advance(nowMs: 4250, inputs: []).isEmpty)
