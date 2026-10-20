@@ -121,10 +121,10 @@ public struct GameSession: Sendable {
     public mutating func handle(_ input: InputEvent) -> [Event] {
         switch input {
         case .tap(let targetID, let atMs):
-            return [press(targetID: targetID, atMs: atMs)]
+            return press(targetID: targetID, atMs: atMs)
         case .dragBegan(let targetID, let point, let atMs):
-            let event = press(targetID: targetID, atMs: atMs)
-            return [event] + (point.map { sample($0, atMs: atMs) } ?? [])
+            let events = press(targetID: targetID, atMs: atMs)
+            return events + (point.map { sample($0, atMs: atMs) } ?? [])
         case .dragChanged(let point, let atMs):
             return point.map { sample($0, atMs: atMs) } ?? []
         case .dragEnded(let point, let atMs):
@@ -135,21 +135,22 @@ public struct GameSession: Sendable {
         }
     }
 
-    /// A pinch on a note: judges a plain note or a slider's head.
-    private mutating func press(targetID: String?, atMs: Double) -> Event {
+    /// A pinch on a note: judges a plain note or a slider's head. Hitting a slider head while another
+    /// slider is still held ends the held one first (both events are returned).
+    private mutating func press(targetID: String?, atMs: Double) -> [Event] {
         guard let id = targetID, let index = indexByID[id] else {
-            return .ignored(targetID: targetID, reason: .unknownTarget)
+            return [.ignored(targetID: targetID, reason: .unknownTarget)]
         }
         guard states[index] == .pending else {
-            return .ignored(targetID: id, reason: .alreadyJudged)
+            return [.ignored(targetID: id, reason: .alreadyJudged)]
         }
         let note = notes[index]
         let judgedMs = atMs - tuning.inputOffsetMs
         guard approaches[index].hasAppeared(atMs: judgedMs) else {
-            return .ignored(targetID: id, reason: .notYetVisible)
+            return [.ignored(targetID: id, reason: .notYetVisible)]
         }
         guard playfield.isInPlayArea(view: note.at, tuning: tuning) else {
-            return .ignored(targetID: id, reason: .outsideHitZone)
+            return [.ignored(targetID: id, reason: .outsideHitZone)]
         }
         // A pinch on a visible note always ends it (owner's rule, DECISIONS D9): inside the Good
         // window it's judged on timing; outside it's a Miss that the app shows as Early or Late.
@@ -157,18 +158,19 @@ public struct GameSession: Sendable {
         let judgment = TapJudge.judgment(forDeltaMs: delta, tuning: tuning) ?? .miss
         if judgment != .miss, note.slider != nil {
             // Slider head hit: the knob now follows the drag. Scored when the slider finishes.
-            if let previous = activeSliderIndex, previous != index { _ = finishSlider(previous, atMs: atMs) }
+            var events: [Event] = []
+            if let previous = activeSliderIndex, previous != index { events.append(finishSlider(previous, atMs: atMs)) }
             states[index] = .holding(head: judgment, deltaMs: delta, atMs: atMs)
             sliders[index] = SliderProgress(note: note)
             activeSliderIndex = index
-            return .sliderStarted(noteID: id, head: judgment, deltaMs: delta)
+            return events + [.sliderStarted(noteID: id, head: judgment, deltaMs: delta)]
         }
         states[index] = judgment == .miss
             ? .missed(atMs: atMs, deltaMs: delta)
             : .hit(judgment, deltaMs: delta, atMs: atMs)
         score.record(judgment, tuning: tuning)
         advanceFirstPending()
-        return .judged(noteID: id, judgment: judgment, deltaMs: delta, combo: score.combo)
+        return [.judged(noteID: id, judgment: judgment, deltaMs: delta, combo: score.combo)]
     }
 
     /// A drag sample moves the active slider's knob; reaching the end finishes the slider.

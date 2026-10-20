@@ -312,6 +312,23 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
         #expect(s.activeSliderIndex == nil)
     }
 
+    @Test func hittingTheNextSliderWhileOneIsHeldReportsTheFirstOnesEnd() {
+        // Slider b starts where a ends (a valid map). The player is still holding a, short of its end,
+        // when b's head is pinched: a breaks, and its end must be reported (popup, timer result, log).
+        let a = sliderNote("a", atMs: 4000, lat: 10, lon: -30)
+        let b = sliderNote("b", atMs: 5000, lat: -10, lon: 10)
+        var s = session([a, b])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "a", point: a.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4500, inputs: drag(a, until: 0.5))
+        let events = s.advance(nowMs: 4960, inputs: [.dragBegan(targetID: "b", point: b.at, atMs: 4960)])
+        #expect(events == [
+            .sliderEnded(noteID: "a", judgment: .miss, finishDeltaMs: nil, combo: 0),
+            .sliderStarted(noteID: "b", head: .perfect, deltaMs: -40),
+        ])
+        #expect(s.state(ofNote: "a") == .missed(atMs: 4960, deltaMs: nil))
+        #expect(s.activeSliderIndex == 1)
+    }
+
     @Test func secondGestureForTheSamePinchIsIgnored() {
         let note = sliderNote()
         var s = session([note])
