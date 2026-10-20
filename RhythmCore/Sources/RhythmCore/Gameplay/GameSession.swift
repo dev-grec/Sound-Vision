@@ -11,8 +11,9 @@ public struct GameSession: Sendable {
         case pending
         /// `deltaMs` is the signed timing error (positive = late); `atMs` the raw input time.
         case hit(Judgment, deltaMs: Double, atMs: Double)
-        /// `atMs` is the clock time when the miss was declared.
-        case missed(atMs: Double)
+        /// `atMs` is the raw clock time of the miss. `deltaMs` is the timing error of the pinch that
+        /// ended the note too early or too late, or nil if the note timed out unhit.
+        case missed(atMs: Double, deltaMs: Double?)
 
         public var isJudged: Bool { self != .pending }
 
@@ -29,11 +30,14 @@ public struct GameSession: Sendable {
         case unknownTarget
         case alreadyJudged
         case outsideHitZone
-        case outsideTimingWindow(deltaMs: Double)
+        /// The note hasn't popped up yet (it's hidden, so this shouldn't come from real gestures).
+        case notYetVisible
         case unsupportedInput
     }
 
     public enum Event: Sendable, Equatable {
+        /// `deltaMs` is the pinch's timing error (positive = late), or nil for a note that timed out.
+        /// A Miss with a delta is an off-beat pinch: negative = Early, positive = Late.
         case judged(noteID: String, judgment: Judgment, deltaMs: Double?, combo: Int)
         case ignored(targetID: String?, reason: IgnoredReason)
     }
@@ -106,14 +110,19 @@ public struct GameSession: Sendable {
         }
         let note = notes[index]
         let judgedMs = atMs - tuning.inputOffsetMs
-        guard playfield.isInHitZone(note.at, atMs: judgedMs, tuning: tuning) else {
+        guard approaches[index].hasAppeared(atMs: judgedMs) else {
+            return .ignored(targetID: id, reason: .notYetVisible)
+        }
+        guard playfield.isInPlayArea(view: note.at, tuning: tuning) else {
             return .ignored(targetID: id, reason: .outsideHitZone)
         }
+        // A pinch on a visible note always ends it (owner's rule, DECISIONS D9): inside the Good
+        // window it's judged on timing; outside it's a Miss that the app shows as Early or Late.
         let delta = TapJudge.delta(inputMs: atMs, targetMs: note.timeMs, tuning: tuning)
-        guard let judgment = TapJudge.judgment(forDeltaMs: delta, tuning: tuning) else {
-            return .ignored(targetID: id, reason: .outsideTimingWindow(deltaMs: delta))
-        }
-        states[index] = .hit(judgment, deltaMs: delta, atMs: atMs)
+        let judgment = TapJudge.judgment(forDeltaMs: delta, tuning: tuning) ?? .miss
+        states[index] = judgment == .miss
+            ? .missed(atMs: atMs, deltaMs: delta)
+            : .hit(judgment, deltaMs: delta, atMs: atMs)
         score.record(judgment, tuning: tuning)
         advanceFirstPending()
         return .judged(noteID: id, judgment: judgment, deltaMs: delta, combo: score.combo)
@@ -125,7 +134,7 @@ public struct GameSession: Sendable {
         var i = firstPendingIndex
         while i < notes.count, notes[i].timeMs + tuning.goodWindowMs < judgedNow {
             if states[i] == .pending {
-                states[i] = .missed(atMs: nowMs)
+                states[i] = .missed(atMs: nowMs, deltaMs: nil)
                 score.record(.miss, tuning: tuning)
                 events.append(.judged(noteID: notes[i].id, judgment: .miss, deltaMs: nil, combo: score.combo))
             }

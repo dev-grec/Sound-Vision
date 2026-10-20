@@ -12,7 +12,7 @@ import Testing
     @Test func wellFormedMapIsClean() {
         let map = Fixtures.map(notes: [
             Fixtures.note("a", atMs: 4000, lat: 10),
-            Fixtures.note("b", atMs: 5500, lat: -12), // 1.5 s later: 18° of rotation + 22° of latitude apart
+            Fixtures.note("b", atMs: 5500, lat: -12, lon: 20), // on screen with a: 30° apart
             Fixtures.note("c", atMs: 8000),
         ])
         let report = BeatmapValidator.validate(map, tuning: tuning)
@@ -47,7 +47,7 @@ import Testing
     }
 
     @Test func noteOutsideZoneIsError() {
-        let misplaced = TapNote(id: "n", timeMs: 4000, at: SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 8000))) // 48° off
+        let misplaced = Fixtures.note("n", atMs: 4000, lon: 48) // 48° off front
         let report = BeatmapValidator.validate(Fixtures.map(notes: [misplaced]), tuning: tuning)
         #expect(report.errors.map(\.code) == ["note.outsideZone"])
         #expect(report.errors.first?.itemID == "n")
@@ -55,17 +55,24 @@ import Testing
 
     @Test func notesMayPopUpAnywhereInThePlayArea() {
         // Off center, up and to the right at hit time: fine.
-        let note = TapNote(id: "n", timeMs: 4000, at: SurfacePoint(lat: 25, lon: Fixtures.frontLon(atMs: 4000) + 20))
+        let note = Fixtures.note("n", atMs: 4000, lat: 25, lon: 20)
         let report = BeatmapValidator.validate(Fixtures.map(notes: [note]), tuning: tuning)
         #expect(report.issues.isEmpty, "\(report.issues)")
     }
 
-    @Test func noteDriftingOutOfPlayAreaWhileOnScreenIsError() {
-        // 35° left of front at hit time is inside the 45° area, but it popped up 1.5 s earlier,
-        // 18° further left (53°), so it was on screen outside the area.
-        let note = TapNote(id: "n", timeMs: 4000, at: SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 4000) - 35))
-        let report = BeatmapValidator.validate(Fixtures.map(notes: [note]), tuning: tuning)
-        #expect(report.errors.map(\.code) == ["note.outsideZone"])
+    @Test func notesAreViewFixedSoRotationDoesNotMatter() {
+        // 40° right is inside the 45° area at any time, however much the object has turned.
+        let report = BeatmapValidator.validate(Fixtures.map(notes: [Fixtures.note("n", atMs: 17_000, lon: 40)]), tuning: tuning)
+        #expect(report.issues.isEmpty, "\(report.issues)")
+    }
+
+    @Test func leftToRightStreamIsValid() {
+        // The owner's example: dots going left to right to lead the eye, one per beat, 26° apart.
+        let notes = [-39.0, -13.0, 13.0, 39.0].enumerated().map { i, lon in
+            Fixtures.note("s\(i)", atMs: 8000 + Double(i) * 500, lon: lon)
+        }
+        let report = BeatmapValidator.validate(Fixtures.map(notes: notes), tuning: tuning)
+        #expect(report.issues.isEmpty, "\(report.issues)")
     }
 
     @Test func noteTimingRules() {

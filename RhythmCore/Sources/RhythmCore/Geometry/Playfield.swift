@@ -46,7 +46,34 @@ public struct Playfield: Sendable {
         angleBetweenDeg(worldNormal(of: point, atMs: ms), Self.front)
     }
 
-    /// True while the point is inside the front-facing play area.
+    // MARK: View positions (tap notes)
+    //
+    // Tap notes don't ride the rotation: their position is fixed in the player's view, given as a
+    // SurfacePoint in the placement frame (lat 0, lon 0 = straight toward the player; +lon = right).
+
+    /// Position of a view-fixed point on the object's front, in the placement frame (meters).
+    public func viewPosition(of point: SurfacePoint) -> SIMD3<Double> {
+        shape.position(of: point)
+    }
+
+    /// Angle in degrees between a view-fixed point and the direction to the player.
+    public func viewAngleFromFrontDeg(of point: SurfacePoint) -> Double {
+        angleBetweenDeg(shape.normal(at: point), Self.front)
+    }
+
+    /// True if a view-fixed point is inside the play area.
+    public func isInPlayArea(view point: SurfacePoint, tuning: Tuning) -> Bool {
+        viewAngleFromFrontDeg(of: point) <= tuning.hitZoneHalfAngleDeg
+    }
+
+    /// Where a point on the rotating surface appears in the player's view at time `ms`.
+    public func viewPoint(ofSurface point: SurfacePoint, atMs ms: Double) -> SurfacePoint {
+        SurfacePoint(direction: worldNormal(of: point, atMs: ms)) ?? point
+    }
+
+    // MARK: Surface positions (strokes)
+
+    /// True while a point on the rotating surface is inside the front-facing play area.
     public func isInHitZone(_ point: SurfacePoint, atMs ms: Double, tuning: Tuning) -> Bool {
         angleFromFrontDeg(of: point, atMs: ms) <= tuning.hitZoneHalfAngleDeg
     }

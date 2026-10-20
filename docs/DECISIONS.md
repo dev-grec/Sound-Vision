@@ -43,7 +43,7 @@ Notes are entities with `CollisionComponent` + `InputTargetComponent` + `HoverEf
 ### D9. Pinches are timestamped on arrival, and the offset is applied only in RhythmCore (M0)
 Gesture callbacks carry no audio timestamp, so `GestureInputSource` stamps each event with `clock.nowMs` when the callback runs. `Tuning.inputOffsetMs` is subtracted only in `TapJudge.delta`, `GameSession` (zone check and auto-miss) and `StrokeFollowScorer`. Never apply it in the app as well.
 - Each frame, inputs are processed **before** auto-misses, so a pinch stamped inside its window still counts if the frame that delivers it lands just after the window closed.
-- A pinch outside the timing window is **ignored, not punished**: imprecise targeting shouldn't break combos. It does show "Early" or "Late" so the player sees that the pinch registered (the first build ignored such pinches silently, which looked like broken input). A note becomes a Miss only when its Good window passes unhit.
+- **A pinch on a visible note always ends it** (owner's request, 2026-10-19). Inside the Good window it's judged Perfect/Great/Good. Outside it, the note becomes a Miss (combo breaks) and the app shows "Early" or "Late" (`NoteState.missed(atMs:deltaMs:)` keeps the delta). Before pop-up a note is hidden and can't be pinched. History: the first build ignored off-window pinches silently, which looked like broken input; the next build showed Early/Late but left the note up, and the owner wanted the note to end.
 
 ## Rendering
 
@@ -88,11 +88,19 @@ The object rotates continuously, so every surface point passes the front once pe
 The original brief made the rotation the approach: a note became hittable as it rotated into a front zone, and its beat was when it reached center. On trying it, the owner clarified the intended design: notes **pop up around the player's view**, and **an outer ring tells you exactly when to click**. So:
 - A note pops up `Tuning.approachMs` (1500 ms) before its time. An approach ring (`NoteVisuals` child "approachRing", `NoteApproach.ringScale`) shrinks from `approachRingStartScale` (3×) to the note's edge and closes at the hit time.
 - Notes are placed anywhere in the **play area** (`hitZoneHalfAngleDeg`, now 45°) and must stay in it while on screen (validator). The center hit-zone outline is gone, along with the "comfort angle" warning and the targetable angle.
-- The object still rotates slowly in time with the music, and notes ride on it. That keeps the glass and picture concept, but rotation is no longer the timing cue.
+- The object still rotates slowly in time with the music. (At first notes rode on it; D18 changed that.)
 - Crowding compares targets on screen at the same time (pop-up to window close).
 - Notes no longer show faintly on the far side before they arrive (the brief had them visible through the glass as they came around). A faint preview of upcoming notes could come back as an option if the owner wants it.
+
+### D18. Tap notes are fixed in the player's view; flow comes from note sequences (owner's design, 2026-10-19)
+After trying D17, the owner said: "I don't want the buttons to be moving really, rather there to be more buttons that follow movement. For example, if I want to draw my user's eyes to the right, we should have multiple dots going from left to right." So:
+- A tap note's `at` is a position in the player's view (placement frame), not on the rotating surface. Note entities are children of the non-rotating `GlassObject.root`; they never move while on screen.
+- Movement and direction are expressed by placing **sequences** of notes (streams) along a path, one per beat. The test map demonstrates left-to-right, right-to-left, diagonal and circular streams.
+- The object still rotates in time with the music, and **strokes stay on the rotating surface** (they make up the picture). That's why the format has two frames (BEATMAP_FORMAT, "Coordinates").
+- Validation is simpler: a note is in the play area or not; crowding compares view positions of targets on screen together. A stroke's start is compared where it sits in view at its start time.
+- Laps (D16) no longer affect tap notes, since they don't ride the surface. Pop-up gating still applies.
 
 ## Debug tooling
 
 ### D15. Autoplay and launch arguments (M0)
-`ScriptedInputSource.autoplay` feeds perfect taps through the same `InputSource` path as gestures, so the full loop runs in the simulator without clicking. Launch arguments (`-autostart game|glassLab`, `-autoplay YES`, `-glassVariant A|B|C`, `-inputOffsetMs N`) let scripts open scenes directly (`scripts/run-sim.sh`). The Glass Lab spins on host time (`HostTimeClock`) because it plays no audio. **Gameplay must never use HostTimeClock.**
+`ScriptedInputSource.autoplay` feeds perfect taps through the same `InputSource` path as gestures, so the full loop runs in the simulator without clicking. Launch arguments (`-autostart game|glassLab`, `-autoplay YES`, `-autoplayEarlyMs N` to make autoplay pinch N ms early, `-glassVariant A|B|C`, `-inputOffsetMs N`; negative values can't be passed this way) let scripts open scenes directly (`scripts/run-sim.sh`). The Glass Lab spins on host time (`HostTimeClock`) because it plays no audio. **Gameplay must never use HostTimeClock.**

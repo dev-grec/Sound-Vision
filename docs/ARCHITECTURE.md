@@ -32,7 +32,7 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 | `BeatmapLoader` | `Beatmap/BeatmapLoader.swift` | Version check first, then decode, with readable errors |
 | `BeatmapValidator` | `Beatmap/BeatmapValidator.swift` | Format and playability rules (zone placement, crowding, speed, strokes). Errors and warnings with stable codes. |
 | `SurfacePoint`, `SurfaceShape`, `SphereShape` | `Geometry/` | Lat/lon ↔ vectors, projection onto the surface, great-circle math. Shapes sit behind a protocol for M3. |
-| `Playfield` | `Geometry/Playfield.swift` | Shape + rotation as seen from the player: world normal and position at time t, angle from front, play-area checks (`isInHitZone`, `maxAngleFromFrontDeg`), far side, projecting placement-frame or object-local points to the surface |
+| `Playfield` | `Geometry/Playfield.swift` | Shape + rotation as seen from the player: world normal and position at time t, angle from front, view-fixed positions for tap notes (`viewPosition`, `isInPlayArea`, `viewPoint(ofSurface:)`), surface checks for strokes (`isInHitZone`, `maxAngleFromFrontDeg`), far side, projecting placement-frame or object-local points to the surface |
 | `PlaybackClock`, `ManualClock`, `BeatGrid` | `Timing/Clock.swift` | Clock protocol (the app's audio clock implements it); ms ↔ beats |
 | `RotationSchedule` | `Rotation/RotationSchedule.swift` | Orientation as a pure function of time, computed analytically per segment |
 | `Judgment`, `TapJudge` | `Gameplay/Judgment.swift` | Timing tiers; the input offset is applied here |
@@ -44,8 +44,8 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 
 ### Frames and conventions
 
-- **Object-local frame**: rotates with the object. Beatmap surface points live here.
-- **Placement frame**: non-rotating, centered on the object. +X right, +Y up, +Z toward the player. `Playfield.front = +Z`.
+- **Object-local frame**: rotates with the object. Stroke paths live here.
+- **Placement frame**: non-rotating, centered on the object. +X right, +Y up, +Z toward the player. `Playfield.front = +Z`. Tap note positions live here (view-fixed).
 - `orientation(atMs:)` maps object-local to placement. The app sets `surfaceRoot.orientation` to it every frame.
 - All times are master-clock ms (audio position). Inputs carry raw clock time; only `TapJudge`/`StrokeFollowScorer`/`GameSession` subtract `Tuning.inputOffsetMs`.
 
@@ -74,7 +74,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 2. `surfaceRoot.orientation = playfield.orientation(atMs: now)`.
 3. Drain `GestureInputSource` and `ScriptedInputSource` (autoplay) → `session.advance(nowMs: now, inputs:)`.
 4. For each judged event, spawn a popup and refresh the HUD.
-5. For each note: hidden until it pops up, then popped in. Its approach ring is scaled from `NoteApproach.ringScale`. Its state sets the input target, look, opacity and sort layer.
+5. For each note (view-fixed children of the non-rotating `GlassObject.root`, DECISIONS D18): hidden until it pops up, then popped in. Its approach ring is scaled from `NoteApproach.ringScale`. Its state sets the input target, look and opacity.
 6. When `session.isFinished(nowMs:)`, record the result, stop audio, and freeze the rotation.
 
 ### Input path

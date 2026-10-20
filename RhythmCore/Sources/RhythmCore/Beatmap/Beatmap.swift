@@ -160,12 +160,14 @@ public struct RotationSegment: Codable, Sendable, Equatable {
     }
 }
 
-/// A tap note: look at it and pinch on time.
+/// A tap note: it pops up, its approach ring closes on the beat, and the player looks at it and pinches.
 public struct TapNote: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     /// Hit time in ms from the start of the audio.
     public var timeMs: Double
-    /// Position on the object's surface, in the object's own (rotating) coordinates.
+    /// Position in the PLAYER'S VIEW, on the front of the object: lat 0, lon 0 is straight toward the
+    /// player, +lon is to the player's right, +lat is up. Fixed: tap notes do not ride the rotation
+    /// (owner's design, DECISIONS D18). Strokes, by contrast, are drawn on the rotating surface.
     public var at: SurfacePoint
 
     public init(id: String, timeMs: Double, at: SurfacePoint) {

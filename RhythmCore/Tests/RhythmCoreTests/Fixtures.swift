@@ -16,9 +16,14 @@ enum Fixtures {
         return lon
     }
 
-    /// A note that sits dead center of the hit zone at its time (shifted by `lat`).
-    static func note(_ id: String, atMs ms: Double, lat: Double = 0) -> TapNote {
-        TapNote(id: id, timeMs: ms, at: SurfacePoint(lat: lat, lon: frontLon(atMs: ms)))
+    /// The point on the rotating surface that faces the player at time `ms` (shifted by `lat`).
+    static func frontPoint(atMs ms: Double, lat: Double = 0) -> SurfacePoint {
+        SurfacePoint(lat: lat, lon: frontLon(atMs: ms))
+    }
+
+    /// A tap note at a fixed spot in the player's view (default: straight ahead).
+    static func note(_ id: String, atMs ms: Double, lat: Double = 0, lon: Double = 0) -> TapNote {
+        TapNote(id: id, timeMs: ms, at: SurfacePoint(lat: lat, lon: lon))
     }
 
     static func map(

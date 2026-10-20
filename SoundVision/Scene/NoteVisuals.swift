@@ -76,8 +76,7 @@ enum NoteVisuals {
 }
 
 /// Floating feedback text that rises and fades, timed by the master clock: the judgment of a hit, or
-/// "Early"/"Late" for a pinch on a note outside its timing window (ignored, no penalty, but the player
-/// must see that the pinch registered).
+/// "Early"/"Late" for a pinch outside the timing window (it ends the note as a Miss, DECISIONS D9).
 @MainActor
 final class JudgmentPopups {
     enum Kind: Hashable {
@@ -124,8 +123,8 @@ final class JudgmentPopups {
         case .judgment(.great): ("Great", UIColor(red: 0.5, green: 1, blue: 0.55, alpha: 1), 0.032)
         case .judgment(.good): ("Good", UIColor(red: 1, green: 0.85, blue: 0.4, alpha: 1), 0.032)
         case .judgment(.miss): ("Miss", UIColor(red: 1, green: 0.35, blue: 0.35, alpha: 1), 0.032)
-        case .early: ("Early", UIColor(white: 0.9, alpha: 1), 0.022)
-        case .late: ("Late", UIColor(white: 0.9, alpha: 1), 0.022)
+        case .early: ("Early", UIColor(red: 1, green: 0.5, blue: 0.3, alpha: 1), 0.028)
+        case .late: ("Late", UIColor(red: 1, green: 0.5, blue: 0.3, alpha: 1), 0.028)
         }
         let mesh = MeshResource.generateText(label, extrusionDepth: 0.002,
                                              font: .systemFont(ofSize: size, weight: .heavy))

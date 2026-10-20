@@ -18,7 +18,7 @@ Maps are hand-written JSON until the editor exists (M3). Run `scripts/test.sh` a
     { "startBeat": 64, "axis": [0, 1, 0], "degreesPerBeat": 4 }
   ],
   "notes": [
-    { "id": "n01", "timeMs": 4000, "at": { "lat": 0, "lon": -48 } }
+    { "id": "n01", "timeMs": 4000, "at": { "lat": 15, "lon": -35 } }
   ],
   "strokes": [
     { "id": "s1", "startMs": 42000, "durationMs": 2000,
@@ -51,8 +51,10 @@ All times are **milliseconds from the start of the audio**, except rotation, whi
 ## Coordinates
 
 - **Placement frame** (non-rotating, centered on the object): +X is the player's right, +Y is up, +Z points toward the player. The player stands along +Z.
-- **Surface points** are `{ "lat": degrees, "lon": degrees }` in the object's own (rotating) frame. `lat 0, lon 0` faces the player before any rotation. Latitude runs from -90 to 90, positive upward. Longitude is positive toward +X. Any longitude value is accepted; it wraps.
-- Surface points are objects rather than `[lat, lon]` pairs so that later shapes can add other coordinate kinds without breaking v1.
+- Positions are `{ "lat": degrees, "lon": degrees }`: latitude from -90 to 90, positive upward; longitude positive toward +X (the player's right); any longitude wraps. They are objects rather than `[lat, lon]` pairs so later shapes can add other coordinate kinds without breaking v1.
+- **Two frames, on purpose:**
+  - **Tap note `at` is in the player's view** (the placement frame, fixed): `lat 0, lon 0` is straight toward the player. Tap notes do not ride the rotation (DECISIONS D18).
+  - **Stroke `path` points are on the object's rotating surface** (the object's own frame): `lat 0, lon 0` faces the player before any rotation. Strokes turn with the object, because together they form the picture wrapped around it.
 
 ## Rotation schedule
 
@@ -67,15 +69,16 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 
 `{ "id", "timeMs", "at": {lat, lon} }`. Each id must be unique across notes and strokes.
 
-**Placement rule:** a note pops up `Tuning.approachMs` (1500 ms) before its hit time, and its approach ring closes on it at `timeMs`. From pop-up until its Good window closes it must stay inside the **play area**: within `Tuning.hitZoneHalfAngleDeg` (45°) of the direction toward the player. Spread notes around the play area; they don't all need to be at the center. The rotation keeps carrying a note while it's on screen (18° over 1.5 s at 12°/s, toward +X for a +Y rotation), so a note placed far toward the side it comes from may start outside the area.
+`at` is where the note sits **in the player's view**, on the front of the object, and it stays there: `{ "lat": 15, "lon": -35 }` is 35° to the left and 15° up. No rotation math is needed.
 
-To place a note at a given spot in the player's view at its hit time, you need to undo the rotation, because surface points are given in the object's frame. The surface point is given in the object's frame, so you have to undo the rotation. For a schedule that only rotates about +Y, the point that is x degrees right of front and at latitude y at time t is **lon = x − θ(t)**, lat = y, where θ(t) is the total rotation in degrees so far.
+**Rules:**
+- A note pops up `Tuning.approachMs` (1500 ms) before `timeMs`, and its approach ring closes on it at `timeMs`.
+- It must be inside the **play area**: within `Tuning.hitZoneHalfAngleDeg` (45°) of straight ahead.
+- Notes on screen at the same time (pop-up to Good-window close) must be at least `Tuning.minNoteSeparationDeg` (25°) apart. Keep a little margin: 25° steps along a latitude other than 0 come out slightly under 25°.
 
-> Test map: 120 BPM (500 ms per beat), 6°/beat until beat 64, then 4°/beat.
-> A note at 4000 ms is beat 8, so θ = 48°. To show it 15° left of front and 20° up: lon = -15 - 48 = -63, lat = 20.
-> A note at 34000 ms is beat 68, so θ = 384 + 4×4 = 400°, which is 40° after wrapping. At front center: lon = -40.
+**Leading the eye:** motion comes from sequences of notes, not from notes moving. To draw the player's eye to the right, place several notes in a row going left to right, one per beat. The test map has examples: left to right, right to left, two diagonals, and a circle of eight.
 
-**Laps:** the object keeps turning, so every surface point passes the front once per revolution (30 s at 12°/s). A note exists only from its pop-up, so a later note's spot passing the front on an earlier lap is harmless. You can reuse a surface spot, as long as the two notes aren't on screen at the same time.
+> One beat at 120 BPM is 500 ms. A four-dot stream: `{lat 0, lon -39}`, `{0, -13}`, `{0, 13}`, `{0, 39}` at 16000, 16500, 17000, 17500 ms. With a 1.5 s approach, all four are on screen together, so each pair must be ≥25° apart; 26° steps leave margin.
 
 ## Strokes
 

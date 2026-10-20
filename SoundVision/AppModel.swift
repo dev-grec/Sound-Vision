@@ -24,6 +24,9 @@ final class AppModel {
     var tuning = Tuning()
     /// Feed scripted perfect input through the InputSource protocol (debug; works without clicking).
     var autoplay = false
+    /// Debug: makes every autoplay pinch this many ms early, to exercise Early/Late.
+    /// Launch argument only: -autoplayEarlyMs 400 (negative values can't be passed as launch arguments).
+    var autoplayEarlyMs: Double = 0
     var glassVariant: GlassVariant = .defaultForGameplay
 
     let library = MapLibrary.loadBundled()
@@ -38,6 +41,7 @@ final class AppModel {
         //   simctl launch <device> com.devgrec.SoundVision -autostart game -autoplay YES -glassVariant C
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: "autoplay") { autoplay = true }
+        autoplayEarlyMs = defaults.double(forKey: "autoplayEarlyMs")
         if let v = defaults.string(forKey: "glassVariant"), let variant = GlassVariant(rawValue: v) {
             glassVariant = variant
         }

@@ -97,12 +97,11 @@ public enum BeatmapValidator {
             if note.timeMs < 0 { error("note.negativeTime", "timeMs is negative", note.id) }
             if let d = durationMs, note.timeMs > d { error("note.afterEnd", "timeMs is after the song ends (\(fmt(d)) ms)", note.id) }
             if abs(note.at.lat) > 90 { error("note.latitude", "lat must be between -90 and 90", note.id) }
-            // On screen from pop-up until its window closes; it must stay in the play area throughout.
-            let worst = playfield.maxAngleFromFrontDeg(of: note.at, fromMs: note.timeMs - tuning.approachMs,
-                                                       toMs: note.timeMs + tuning.goodWindowMs)
-            if worst > tuning.hitZoneHalfAngleDeg {
+            // Tap notes are fixed in the player's view; they must be inside the play area.
+            let angle = playfield.viewAngleFromFrontDeg(of: note.at)
+            if angle > tuning.hitZoneHalfAngleDeg {
                 error("note.outsideZone",
-                      "reaches \(fmt(worst))° from front while on screen; the play area is ±\(fmt(tuning.hitZoneHalfAngleDeg))°",
+                      "is \(fmt(angle))° from front; the play area is ±\(fmt(tuning.hitZoneHalfAngleDeg))°",
                       note.id)
             }
         }
@@ -149,15 +148,16 @@ public enum BeatmapValidator {
             }
         }
 
-        // Crowding: targets on screen at the same time (pop-up to window close) must be far apart on the
-        // surface. The object is rigid, so the angle between two surface points never changes as it
-        // rotates; comparing surface positions is enough.
+        // Crowding: targets on screen at the same time (pop-up to window close) must be far apart in the
+        // player's view. Tap notes are view-fixed; a stroke's start point is compared where it sits in
+        // view at its start time.
         struct Target { var id: String; var fromMs: Double; var toMs: Double; var at: SurfacePoint }
         func target(_ id: String, _ ms: Double, _ at: SurfacePoint) -> Target {
             Target(id: id, fromMs: ms - tuning.approachMs, toMs: ms + tuning.goodWindowMs, at: at)
         }
         let targets = (map.notes.filter { $0.timeMs.isFinite && $0.at.isFinite }.map { target($0.id, $0.timeMs, $0.at) }
-            + map.strokes.filter { $0.startMs.isFinite && ($0.path.first?.isFinite ?? false) }.map { target($0.id, $0.startMs, $0.path[0]) })
+            + map.strokes.filter { $0.startMs.isFinite && ($0.path.first?.isFinite ?? false) }
+                .map { target($0.id, $0.startMs, playfield.viewPoint(ofSurface: $0.path[0], atMs: $0.startMs)) })
             .sorted { $0.fromMs < $1.fromMs }
         for i in targets.indices {
             var j = i + 1

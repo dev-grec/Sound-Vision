@@ -82,19 +82,30 @@ import Testing
         #expect(events.first == .judged(noteID: "n1", judgment: .great, deltaMs: 90, combo: 1))
     }
 
-    @Test func tooEarlyTapIsIgnoredAndNoteStaysPlayable() {
-        var s = makeSession([Fixtures.note("n1", atMs: 4000)])
-        let early = s.advance(nowMs: 3500, inputs: [.tap(targetID: "n1", atMs: 3500)])
-        #expect(early == [.ignored(targetID: "n1", reason: .outsideTimingWindow(deltaMs: -500))])
-        #expect(s.state(ofNote: "n1") == .pending)
-        let onTime = s.advance(nowMs: 4000, inputs: [.tap(targetID: "n1", atMs: 4000)])
-        #expect(onTime.first == .judged(noteID: "n1", judgment: .perfect, deltaMs: 0, combo: 1))
+    @Test func earlyTapEndsTheNoteAsAMiss() {
+        // Owner's rule: a pinch on a visible note always ends it. Too early = Miss (shown as "Early").
+        var s = makeSession([Fixtures.note("a", atMs: 4000), Fixtures.note("b", atMs: 6000, lon: 30)])
+        _ = s.advance(nowMs: 3000, inputs: [.tap(targetID: "a", atMs: 3000)]) // a is 1 s early; still counts... as a miss
+        #expect(s.state(ofNote: "a") == .missed(atMs: 3000, deltaMs: -1000))
+        #expect(s.score.count(.miss) == 1)
+        let tooSoon = s.advance(nowMs: 4300, inputs: [.tap(targetID: "b", atMs: 4300)]) // 1.7 s early: b not popped up
+        #expect(tooSoon == [.ignored(targetID: "b", reason: .notYetVisible)])
+        let early = s.advance(nowMs: 5700, inputs: [.tap(targetID: "b", atMs: 5700)])
+        #expect(early == [.judged(noteID: "b", judgment: .miss, deltaMs: -300, combo: 0)])
+        #expect(s.allNotesJudged)
+    }
+
+    @Test func comboBreaksOnEarlyTap() {
+        var s = makeSession([Fixtures.note("a", atMs: 4000), Fixtures.note("b", atMs: 6000, lon: 30)])
+        _ = s.advance(nowMs: 4000, inputs: [.tap(targetID: "a", atMs: 4000)])
+        #expect(s.score.combo == 1)
+        _ = s.advance(nowMs: 5600, inputs: [.tap(targetID: "b", atMs: 5600)])
+        #expect(s.score.combo == 0)
     }
 
     @Test func tapOutsideHitZoneIsIgnored() {
-        // A note whose position faces the player at 20 s is far outside the zone at 4 s, even if the
-        // map (wrongly) says to hit it at 4 s. The zone check wins.
-        let misplaced = TapNote(id: "n1", timeMs: 4000, at: SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 20_000)))
+        // A note placed outside the play area (the validator rejects such maps) is never hittable.
+        let misplaced = TapNote(id: "n1", timeMs: 4000, at: SurfacePoint(lat: 0, lon: 90))
         var s = makeSession([misplaced])
         let events = s.advance(nowMs: 4000, inputs: [.tap(targetID: "n1", atMs: 4000)])
         #expect(events == [.ignored(targetID: "n1", reason: .outsideHitZone)])
@@ -114,7 +125,7 @@ import Testing
         #expect(s.advance(nowMs: 4170, inputs: []).isEmpty) // window still open (exactly at its edge)
         let events = s.advance(nowMs: 4171, inputs: [])
         #expect(events == [.judged(noteID: "n1", judgment: .miss, deltaMs: nil, combo: 0)])
-        #expect(s.state(ofNote: "n1") == .missed(atMs: 4171))
+        #expect(s.state(ofNote: "n1") == .missed(atMs: 4171, deltaMs: nil))
         #expect(s.state(ofNote: "n2") == .pending)
         // A late tap after the miss is ignored.
         let late = s.advance(nowMs: 4200, inputs: [.tap(targetID: "n1", atMs: 4200)])
@@ -206,18 +217,13 @@ import Testing
     }
 }
 
-/// Regression: every point passes the front once per revolution (30 s at 12°/s). A note due later must
-/// not exist when its surface spot passes the front on an earlier lap (found in the simulator in M0:
-/// end-of-song notes showed as hittable next to the current ones). Notes exist only from their pop-up.
-@Suite struct LappingTests {
-    @Test func laterNoteHasNotAppearedDuringEarlierLap() {
-        let early = Fixtures.note("early", atMs: 10_000)
-        let lapped = Fixtures.note("lapped", atMs: 40_000, lat: 30) // same front spot, one revolution later
-        let session = GameSession(beatmap: Fixtures.map(notes: [early, lapped]), tuning: Tuning())
-        #expect(session.playfield.isInHitZone(lapped.at, atMs: 10_000, tuning: session.tuning)) // geometrically in front...
-        #expect(!session.hasAppeared(1, atMs: 10_000))                                          // ...but not shown
-        #expect(session.hasAppeared(1, atMs: 38_500))
-        #expect(!session.hasAppeared(1, atMs: 38_499))
+/// Notes exist only from their pop-up (hidden and untargetable before). DECISIONS D16.
+@Suite struct PopUpTests {
+    @Test func noteIsHiddenUntilItPopsUp() {
+        let session = GameSession(beatmap: Fixtures.map(notes: [Fixtures.note("n", atMs: 40_000)]), tuning: Tuning())
+        #expect(!session.hasAppeared(0, atMs: 10_000))
+        #expect(!session.hasAppeared(0, atMs: 38_499))
+        #expect(session.hasAppeared(0, atMs: 38_500))
     }
 
     @Test func appearanceRespectsInputOffset() {

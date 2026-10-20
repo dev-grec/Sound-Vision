@@ -152,35 +152,44 @@ import Testing
     let tuning = Tuning()
 
     @Test func noteIsCenteredAtItsTime() {
-        let note = Fixtures.note("n", atMs: 4000)
-        #expect(field.angleFromFrontDeg(of: note.at, atMs: 4000) < 1e-6)
-        #expect(field.isInHitZone(note.at, atMs: 4000, tuning: tuning))
+        let note = Fixtures.frontPoint(atMs: 4000)
+        #expect(field.angleFromFrontDeg(of: note, atMs: 4000) < 1e-6)
+        #expect(field.isInHitZone(note, atMs: 4000, tuning: tuning))
     }
 
     @Test func playAreaEntryAndExitFollowRotationSpeed() {
         // 12°/s with a 45° play area: a front-center point is inside from 3.75 s before to 3.75 s after.
-        let note = Fixtures.note("n", atMs: 10_000)
-        #expect(field.isInHitZone(note.at, atMs: 6_300, tuning: tuning))
-        #expect(!field.isInHitZone(note.at, atMs: 6_200, tuning: tuning))
-        #expect(field.isInHitZone(note.at, atMs: 13_700, tuning: tuning))
-        #expect(!field.isInHitZone(note.at, atMs: 13_800, tuning: tuning))
+        let note = Fixtures.frontPoint(atMs: 10_000)
+        #expect(field.isInHitZone(note, atMs: 6_300, tuning: tuning))
+        #expect(!field.isInHitZone(note, atMs: 6_200, tuning: tuning))
+        #expect(field.isInHitZone(note, atMs: 13_700, tuning: tuning))
+        #expect(!field.isInHitZone(note, atMs: 13_800, tuning: tuning))
     }
 
     @Test func maxAngleOverSpan() {
-        let note = Fixtures.note("n", atMs: 10_000)
-        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note.at, fromMs: 8_500, toMs: 10_000), 18, tolerance: 1e-6))
-        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note.at, fromMs: 9_000, toMs: 11_500), 18, tolerance: 1e-6))
+        let note = Fixtures.frontPoint(atMs: 10_000)
+        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note, fromMs: 8_500, toMs: 10_000), 18, tolerance: 1e-6))
+        #expect(approxEqual(field.maxAngleFromFrontDeg(of: note, fromMs: 9_000, toMs: 11_500), 18, tolerance: 1e-6))
     }
 
     @Test func latitudeAddsToAngleFromFront() {
-        let note = Fixtures.note("n", atMs: 4000, lat: 15)
-        #expect(approxEqual(field.angleFromFrontDeg(of: note.at, atMs: 4000), 15, tolerance: 1e-6))
+        let note = Fixtures.frontPoint(atMs: 4000, lat: 15)
+        #expect(approxEqual(field.angleFromFrontDeg(of: note, atMs: 4000), 15, tolerance: 1e-6))
     }
 
     @Test func farSideIsBehind() {
-        let note = Fixtures.note("n", atMs: 20_000) // faces front at 20 s, so faces away at 5 s (180° earlier)
-        #expect(field.isFarSide(note.at, atMs: 5_000))
-        #expect(!field.isFarSide(note.at, atMs: 20_000))
+        let note = Fixtures.frontPoint(atMs: 20_000) // faces front at 20 s, so faces away at 5 s (180° earlier)
+        #expect(field.isFarSide(note, atMs: 5_000))
+        #expect(!field.isFarSide(note, atMs: 20_000))
+    }
+
+    @Test func viewFixedPoints() {
+        #expect(field.isInPlayArea(view: SurfacePoint(lat: 20, lon: -30), tuning: tuning))
+        #expect(!field.isInPlayArea(view: SurfacePoint(lat: 0, lon: 50), tuning: tuning))
+        #expect(approxEqual(field.viewAngleFromFrontDeg(of: SurfacePoint(lat: 0, lon: -40)), 40))
+        // A surface point that faces the player at 4 s appears straight ahead in view at 4 s.
+        let v = field.viewPoint(ofSurface: Fixtures.frontPoint(atMs: 4000, lat: 10), atMs: 4000)
+        #expect(approxEqual(v.lat, 10, tolerance: 1e-9) && approxEqual(v.lon, 0, tolerance: 1e-9))
     }
 
     @Test func projectionFromPlacementUndoesRotation() throws {

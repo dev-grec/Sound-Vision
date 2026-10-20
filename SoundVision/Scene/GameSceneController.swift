@@ -63,7 +63,7 @@ final class GameSceneController {
         let session = GameSession(beatmap: map, tuning: tuning, songDurationMs: clock.durationMs)
         self.session = session
         if model.autoplay {
-            autoplay = .autoplay(for: map, tuning: tuning)
+            autoplay = .autoplay(for: map, tuning: tuning, jitterMs: -model.autoplayEarlyMs)
         }
 
         let rig = PlacementRig()
@@ -72,10 +72,13 @@ final class GameSceneController {
         rig.placement.addChild(glass.root)
         rig.placement.addChild(popups.root)
 
+        // Tap notes are fixed in the player's view (DECISIONS D18): they hang from the non-rotating
+        // glass root, not the rotating surfaceRoot, and their positions never change.
         noteEntities = session.notes.map { note in
             let e = NoteVisuals.makeNote(note, radius: radius, tuning: tuning)
             e.isEnabled = false // hidden until it pops up
-            glass.surfaceRoot.addChild(e)
+            glass.root.addChild(e)
+            glass.setSide(of: e, farSide: false)
             return e
         }
         approachRings = noteEntities.map { NoteVisuals.approachRing(of: $0) }
@@ -111,9 +114,9 @@ final class GameSceneController {
 
     private func spawnPopup(_ kind: JudgmentPopups.Kind, forNote id: String, session: GameSession, now: Double) {
         guard let note = session.notes.first(where: { $0.id == id }) else { return }
-        let pos = session.playfield.worldPosition(of: note.at, atMs: now)
-        let normal = session.playfield.worldNormal(of: note.at, atMs: now)
-        popups.spawn(kind, at: SIMD3<Float>(pos + normal * 0.07), nowMs: now)
+        let pos = session.playfield.viewPosition(of: note.at)
+        // Toward the player (not along the surface normal), so text near the edge stays in front of the glass.
+        popups.spawn(kind, at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
     }
 
     func applyVariant(_ variant: GlassVariant) {
@@ -155,28 +158,24 @@ final class GameSceneController {
         for event in events {
             switch event {
             case .judged(let id, let judgment, let delta, let combo):
-                spawnPopup(.judgment(judgment), forNote: id, session: session, now: now)
+                // A Miss from a pinch (it has a delta) was off-beat: show Early or Late instead of Miss.
+                let kind: JudgmentPopups.Kind = switch (judgment, delta) {
+                case (.miss, .some(let d)): d < 0 ? .early : .late
+                default: .judgment(judgment)
+                }
+                spawnPopup(kind, forNote: id, session: session, now: now)
                 if let delta {
                     log.info("hit \(id, privacy: .public): \(judgment.rawValue, privacy: .public), delta \(Int(delta)) ms, combo \(combo)")
                 } else {
                     log.debug("miss \(id, privacy: .public)")
                 }
             case .ignored(let target, let reason):
-                // A pinch on a note outside its window: no penalty, but show that it registered.
-                if case .outsideTimingWindow(let delta) = reason, let target {
-                    spawnPopup(delta < 0 ? .early : .late, forNote: target, session: session, now: now)
-                } else if case .outsideHitZone = reason, let target {
-                    spawnPopup(.early, forNote: target, session: session, now: now)
-                }
                 log.info("pinch on \(target ?? "nothing", privacy: .public) ignored: \(String(describing: reason), privacy: .public)")
             }
         }
         if !events.isEmpty { refreshHUD(session) }
 
-        updateNotes(session, glass: glass, now: now, tuning: tuning)
-        #if DEBUG
-        logRenderedVersusExpected(session, glass: glass, now: now)
-        #endif
+        updateNotes(session, now: now, tuning: tuning)
         popups.update(nowMs: now, durationMs: tuning.judgmentPopupMs)
 
         if !hud.finished, session.isFinished(nowMs: now) {
@@ -184,16 +183,11 @@ final class GameSceneController {
         }
     }
 
-    private func updateNotes(_ session: GameSession, glass: GlassObject, now: Double, tuning: Tuning) {
-        let farOpacity = glass.farSideOpacity(base: Float(tuning.farSideOpacity))
+    private func updateNotes(_ session: GameSession, now: Double, tuning: Tuning) {
         for (i, entity) in noteEntities.enumerated() {
-            let note = session.notes[i]
-            let far = session.playfield.isFarSide(note.at, atMs: now)
-            glass.setSide(of: entity, farSide: far)
             switch session.states[i] {
             case .pending:
-                // A note exists only from its pop-up (the object keeps turning, so its surface spot also
-                // passes the front on earlier laps). Then its ring shrinks and closes at the hit time.
+                // A note exists only from its pop-up; then its ring shrinks and closes at the hit time.
                 guard session.hasAppeared(i, atMs: now) else {
                     NoteVisuals.setTargetable(entity, false)
                     if entity.isEnabled { entity.isEnabled = false }
@@ -205,7 +199,7 @@ final class GameSceneController {
                 let pop = Float(min(max((judgedNow - approach.appearMs) / tuning.noteFadeInMs, 0), 1))
                 NoteVisuals.setTargetable(entity, true)
                 NoteVisuals.setLook(entity, .hittable)
-                NoteVisuals.setOpacity(entity, (far ? farOpacity : 1) * pop)
+                NoteVisuals.setOpacity(entity, pop)
                 entity.scale = SIMD3(repeating: 0.6 + 0.4 * pop)
                 if let ring = approachRings[i] {
                     if !ring.isEnabled { ring.isEnabled = true }
@@ -220,7 +214,7 @@ final class GameSceneController {
                 let t = Float(min(max((now - atMs) / 250, 0), 1))
                 entity.scale = SIMD3(repeating: 1 + 0.6 * t)
                 NoteVisuals.setOpacity(entity, 1 - t)
-            case .missed(let atMs):
+            case .missed(let atMs, _):
                 approachRings[i]?.isEnabled = false
                 NoteVisuals.setTargetable(entity, false)
                 NoteVisuals.setLook(entity, .missed)
@@ -229,23 +223,6 @@ final class GameSceneController {
             }
         }
     }
-
-    #if DEBUG
-    @ObservationIgnored private var lastDebugLogSecond = -1
-
-    /// Once a second, compares where RealityKit put the next pending note (relative to the placement
-    /// frame) with where RhythmCore says it is. They must agree, or visuals and judging disagree.
-    private func logRenderedVersusExpected(_ session: GameSession, glass: GlassObject, now: Double) {
-        let second = Int(now / 1000)
-        guard second != lastDebugLogSecond, let rig,
-              let i = session.states.firstIndex(of: .pending) else { return }
-        lastDebugLogSecond = second
-        let rendered = noteEntities[i].position(relativeTo: rig.placement)
-        let expected = SIMD3<Float>(session.playfield.worldPosition(of: session.notes[i].at, atMs: now))
-            * (1 + Float(session.tuning.noteSurfaceLiftM / session.beatmap.object.radiusM))
-        log.debug("t=\(Int(now)) \(session.notes[i].id, privacy: .public) rendered \(rendered.debugDescription, privacy: .public) expected \(expected.debugDescription, privacy: .public) angle \(session.playfield.angleFromFrontDeg(of: session.notes[i].at, atMs: now))")
-    }
-    #endif
 
     private func refreshHUD(_ session: GameSession) {
         hud.score = session.score.score

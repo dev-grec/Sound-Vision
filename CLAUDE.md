@@ -8,8 +8,8 @@ Several Claude Code instances work on this project in separate sessions that can
 
 A rhythm game for Apple Vision Pro, played on the surface of a transparent glass object (a sphere for now) that floats in a mixed-reality immersive space and rotates slowly in time with the music.
 
-- **Tap notes** pop up at spots around the front of the object (the play area) and ride its slow rotation. A shrinking **approach ring** around each note closes exactly on the beat; the player looks at the note and pinches when the ring closes. (Owner's design, 2026-10-19: the ring is the timing cue, not the rotation. DECISIONS D17.)
-- **Stroke notes** (M1): look at the start point, pinch on time, hold, and drag along a guided path, following a moving guide. A completed stroke fills with its final color.
+- **Tap notes** pop up at fixed spots in the player's view, around the front of the object (the play area); they don't move. A shrinking **approach ring** around each note closes exactly on the beat; the player looks at the note and pinches when the ring closes. A pinch outside the timing window ends the note as a Miss ("Early"/"Late"). Direction and flow come from **sequences of notes** (e.g. dots left to right), not from moving notes. (Owner's design, 2026-10-19: DECISIONS D17, D18, D9.)
+- **Stroke notes** (M1): look at the start point, pinch on time, hold, and drag along a guided path, following a moving guide. A completed stroke fills with its final color. Strokes live on the object's rotating surface.
 - **The picture** (M2): all of a song's strokes together form a hidden artwork. At song end the object stops and shows it, vivid where the player did well.
 
 ## Hard rules

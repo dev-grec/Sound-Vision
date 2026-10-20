@@ -15,6 +15,8 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] Far-side opacity (`Tuning.farSideOpacity` 0.35): can approaching notes be seen coming around without being distracting?
 - [ ] Approach ring: is it easy to see where a note popped up, and to read when the ring closes? Ring start size (`approachRingStartScale` 3×), approach time (`approachMs` 1500), thickness (3 mm).
 - [ ] Pop-up (`noteFadeInMs` 200): noticeable without being jarring.
+- [ ] Streams of one note per beat (500 ms at 120 BPM): can the eyes keep up with left-to-right / diagonal / circle streams? Do they actually lead the eye?
+- [ ] Early/Late: a pinch outside the window ends the note as a Miss. Does that feel fair with real pinch latency, or does it punish slightly-early pinches too much?
 - [ ] Judgment popups are readable and don't block the next note.
 - [ ] HUD above the sphere is readable, and its position is comfortable.
 
