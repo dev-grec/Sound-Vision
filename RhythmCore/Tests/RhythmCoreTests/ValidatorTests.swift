@@ -77,6 +77,14 @@ import Testing
         #expect(report.errors.contains { $0.code == "targets.crowded" && $0.itemID == "b" })
     }
 
+    @Test func crowdingUsesApproachOverlapNotAFixedWindow() {
+        // 2 s apart and 24° apart: b is already targetable (3.3 s lead at 12°/s) while a is still due.
+        let a = Fixtures.note("a", atMs: 4000)
+        let b = Fixtures.note("b", atMs: 6000)
+        let report = BeatmapValidator.validate(Fixtures.map(notes: [a, b]), tuning: tuning)
+        #expect(report.errors.contains { $0.code == "targets.crowded" && $0.itemID == "b" })
+    }
+
     @Test func sameSpotFarApartInTimeIsFine() {
         // 30 s apart is a full turn later (12°/s * 30 s = 360°): same surface spot, no crowding.
         let report = BeatmapValidator.validate(Fixtures.map(notes: [Fixtures.note("a", atMs: 4000), Fixtures.note("b", atMs: 34_000)]), tuning: tuning)

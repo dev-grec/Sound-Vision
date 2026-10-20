@@ -37,6 +37,15 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Outside it (but inside the hit zone) is a warning. Outside the hit zone is an error.
     public var noteComfortAngleDeg: Double = 20
 
+    // MARK: Note approach
+
+    /// Every point on the object passes the front once per revolution, so a note is shown only on its
+    /// final approach: it appears when it was last this far from front before its hit time.
+    /// Over 90° means it first shows on the far side, faintly through the glass. [device]
+    public var noteAppearAngleDeg: Double = 150
+    /// Fade-in time when a note appears, in ms.
+    public var noteFadeInMs: Double = 400
+
     // MARK: Note size and spacing
 
     /// Visual diameter of a tap note disc, in meters. [device]
@@ -45,10 +54,8 @@ public struct Tuning: Codable, Sendable, Equatable {
     public var noteHitRadiusScale: Double = 1.3
     /// Height of notes above the glass surface, in meters, to avoid z-fighting.
     public var noteSurfaceLiftM: Double = 0.004
-    /// Validator: two targets (notes or stroke starts) closer than this in time must be at least
-    /// `minNoteSeparationDeg` apart on the surface. [device]
-    public var simultaneityWindowMs: Double = 2000
-    /// Validator: minimum angular separation for targets inside `simultaneityWindowMs`. [device]
+    /// Validator: two targets (notes or stroke starts) that are targetable at the same time
+    /// (overlapping final approaches) must be at least this far apart on the surface. [device]
     public var minNoteSeparationDeg: Double = 25
 
     // MARK: Rotation

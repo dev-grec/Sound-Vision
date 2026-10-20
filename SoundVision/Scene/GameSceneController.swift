@@ -169,6 +169,9 @@ final class GameSceneController {
         if !events.isEmpty { refreshHUD(session) }
 
         updateNotes(session, glass: glass, now: now, tuning: tuning)
+        #if DEBUG
+        logRenderedVersusExpected(session, glass: glass, now: now)
+        #endif
         if let zoneRing { glass.setSide(of: zoneRing, farSide: false) }
         popups.update(nowMs: now, durationMs: tuning.judgmentPopupMs)
 
@@ -185,10 +188,20 @@ final class GameSceneController {
             glass.setSide(of: entity, farSide: far)
             switch session.states[i] {
             case .pending:
+                // Every note passes the front once per revolution; show it only on the pass that ends
+                // at its own time (RhythmCore: GameSession.isOnFinalApproach).
+                guard session.isOnFinalApproach(i, atMs: now) else {
+                    NoteVisuals.setTargetable(entity, false)
+                    if entity.isEnabled { entity.isEnabled = false }
+                    continue
+                }
+                if !entity.isEnabled { entity.isEnabled = true }
                 let angle = session.playfield.angleFromFrontDeg(of: note.at, atMs: now)
+                let sinceAppear = now - tuning.inputOffsetMs - session.approaches[i].appearMs
+                let fadeIn = Float(min(max(sinceAppear / tuning.noteFadeInMs, 0), 1))
                 NoteVisuals.setTargetable(entity, angle <= tuning.targetableHalfAngleDeg)
                 NoteVisuals.setLook(entity, angle <= tuning.hitZoneHalfAngleDeg ? .hittable : .approaching)
-                NoteVisuals.setOpacity(entity, far ? farOpacity : 1)
+                NoteVisuals.setOpacity(entity, (far ? farOpacity : 1) * fadeIn)
                 entity.scale = .one
             case .hit(_, _, let atMs):
                 NoteVisuals.setTargetable(entity, false)
@@ -204,6 +217,23 @@ final class GameSceneController {
             }
         }
     }
+
+    #if DEBUG
+    @ObservationIgnored private var lastDebugLogSecond = -1
+
+    /// Once a second, compares where RealityKit put the next pending note (relative to the placement
+    /// frame) with where RhythmCore says it is. They must agree, or visuals and judging disagree.
+    private func logRenderedVersusExpected(_ session: GameSession, glass: GlassObject, now: Double) {
+        let second = Int(now / 1000)
+        guard second != lastDebugLogSecond, let rig,
+              let i = session.states.firstIndex(of: .pending) else { return }
+        lastDebugLogSecond = second
+        let rendered = noteEntities[i].position(relativeTo: rig.placement)
+        let expected = SIMD3<Float>(session.playfield.worldPosition(of: session.notes[i].at, atMs: now))
+            * (1 + Float(session.tuning.noteSurfaceLiftM / session.beatmap.object.radiusM))
+        log.debug("t=\(Int(now)) \(session.notes[i].id, privacy: .public) rendered \(rendered.debugDescription, privacy: .public) expected \(expected.debugDescription, privacy: .public) angle \(session.playfield.angleFromFrontDeg(of: session.notes[i].at, atMs: now))")
+    }
+    #endif
 
     private func refreshHUD(_ session: GameSession) {
         hud.score = session.score.score

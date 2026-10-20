@@ -188,3 +188,27 @@ import Testing
         }
     }
 }
+
+@Suite struct ApproachTests {
+    let field = Playfield(beatmap: Fixtures.map())
+    let tuning = Tuning()
+
+    @Test func approachTimesFollowRotationSpeed() {
+        // 12°/s: a note centered at 20 s was 150° from front 12.5 s earlier and 40° from front 3.33 s earlier.
+        let note = Fixtures.note("n", atMs: 20_000)
+        let a = field.approach(of: note.at, hitMs: 20_000, tuning: tuning)
+        #expect(approxEqual(a.appearMs, 7_500, tolerance: 1))
+        #expect(approxEqual(a.targetableFromMs, 20_000 - 40_000.0 / 12, tolerance: 1))
+    }
+
+    @Test func alreadyFarAwayReturnsSameTime() {
+        let behind = SurfacePoint(lat: 0, lon: Fixtures.frontLon(atMs: 0) + 180)
+        #expect(field.lastTimeBefore(0, point: behind, atLeastDeg: 150) == 0)
+    }
+
+    @Test func pointThatNeverLeavesIsCappedByLookback() {
+        // The north pole sits on the rotation axis: always 90° from front, never 150°.
+        let pole = SurfacePoint(lat: 90, lon: 0)
+        #expect(field.lastTimeBefore(50_000, point: pole, atLeastDeg: 150, lookbackMs: 10_000) == 40_000)
+    }
+}

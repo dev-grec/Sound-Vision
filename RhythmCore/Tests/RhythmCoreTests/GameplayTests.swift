@@ -205,3 +205,18 @@ import Testing
         #expect(src.isEmpty)
     }
 }
+
+/// Regression: every point passes the front once per revolution (30 s at 12°/s). A note due later must
+/// not count as present when it passes the front on an earlier lap (found in the simulator in M0:
+/// end-of-song notes showed as hittable next to the current ones).
+@Suite struct LappingTests {
+    @Test func laterNoteIsNotOnFinalApproachDuringEarlierLap() {
+        let early = Fixtures.note("early", atMs: 10_000)
+        let lapped = Fixtures.note("lapped", atMs: 40_000, lat: 12) // same front position, one revolution later
+        let session = GameSession(beatmap: Fixtures.map(notes: [early, lapped]), tuning: Tuning())
+        #expect(session.playfield.isInHitZone(lapped.at, atMs: 10_000, tuning: session.tuning)) // geometrically in the zone...
+        #expect(!session.isOnFinalApproach(1, atMs: 10_000))                                    // ...but not playable yet
+        #expect(session.isOnFinalApproach(1, atMs: 39_000))
+        #expect(session.isOnFinalApproach(0, atMs: 10_000))
+    }
+}

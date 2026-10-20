@@ -150,21 +150,29 @@ public enum BeatmapValidator {
             }
         }
 
-        // Crowding: targets close in time must be far apart on the surface. The object is rigid, so the
-        // angle between two surface points never changes as it rotates; comparing surface positions is enough.
-        struct Target { var id: String; var timeMs: Double; var at: SurfacePoint }
-        let targets = (map.notes.map { Target(id: $0.id, timeMs: $0.timeMs, at: $0.at) }
-            + map.strokes.compactMap { s in s.path.first.map { Target(id: s.id, timeMs: s.startMs, at: $0) } })
-            .filter { $0.timeMs.isFinite && $0.at.isFinite }
-            .sorted { $0.timeMs < $1.timeMs }
+        // Crowding: targets that are targetable at the same time must be far apart on the surface.
+        // A target is targetable from its final approach (see Playfield.approach) until its window closes.
+        // The object is rigid, so the angle between two surface points never changes as it rotates;
+        // comparing surface positions is enough. Every point passes the front once per revolution, but a
+        // note is only shown on its final approach, so earlier passes don't count.
+        struct Target { var id: String; var fromMs: Double; var toMs: Double; var at: SurfacePoint }
+        func target(_ id: String, _ ms: Double, _ at: SurfacePoint) -> Target {
+            let approach = playfield.approach(of: at, hitMs: ms, tuning: tuning)
+            return Target(id: id, fromMs: approach.targetableFromMs, toMs: ms + tuning.goodWindowMs, at: at)
+        }
+        let targets = (map.notes.filter { $0.timeMs.isFinite && $0.at.isFinite }.map { target($0.id, $0.timeMs, $0.at) }
+            + map.strokes.filter { $0.startMs.isFinite && ($0.path.first?.isFinite ?? false) }.map { target($0.id, $0.startMs, $0.path[0]) })
+            .sorted { $0.fromMs < $1.fromMs }
         for i in targets.indices {
             var j = i + 1
-            while j < targets.count, targets[j].timeMs - targets[i].timeMs < tuning.simultaneityWindowMs {
+            while j < targets.count, targets[j].fromMs <= targets[i].toMs {
                 let sep = targets[i].at.angularDistanceDeg(to: targets[j].at)
                 if sep < tuning.minNoteSeparationDeg {
+                    let later = targets[i].toMs > targets[j].toMs ? targets[i] : targets[j]
+                    let earlier = later.id == targets[i].id ? targets[j] : targets[i]
                     error("targets.crowded",
-                          "is only \(fmt(sep))° from \(targets[i].id) and \(fmt(targets[j].timeMs - targets[i].timeMs)) ms apart; needs ≥\(fmt(tuning.minNoteSeparationDeg))° within \(fmt(tuning.simultaneityWindowMs)) ms",
-                          targets[j].id)
+                          "is only \(fmt(sep))° from \(earlier.id) while both are targetable; needs ≥\(fmt(tuning.minNoteSeparationDeg))°",
+                          later.id)
                 }
                 j += 1
             }

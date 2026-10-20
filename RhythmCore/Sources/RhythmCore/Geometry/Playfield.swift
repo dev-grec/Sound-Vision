@@ -61,6 +61,49 @@ public struct Playfield: Sendable {
         simd_dot(worldNormal(of: point, atMs: ms), Self.front) < 0
     }
 
+    /// The latest time at or before `ms` when `point` was at least `angleDeg` from front, searching back
+    /// at most `lookbackMs`. Returns `ms - lookbackMs` if the point stayed closer than that throughout
+    /// (for example, a point near the rotation axis).
+    ///
+    /// Used for a note's final approach: every note comes past the front once per revolution, so a
+    /// note must only appear (and be targetable) on the pass that ends at its own time.
+    public func lastTimeBefore(_ ms: Double, point: SurfacePoint, atLeastDeg angleDeg: Double,
+                               lookbackMs: Double = 60_000, stepMs: Double = 50) -> Double {
+        if angleFromFrontDeg(of: point, atMs: ms) >= angleDeg { return ms }
+        var later = ms
+        var t = ms - stepMs
+        while t >= ms - lookbackMs {
+            if angleFromFrontDeg(of: point, atMs: t) >= angleDeg {
+                // Crossing is in (t, later]: bisect to sub-millisecond precision.
+                var lo = t, hi = later
+                while hi - lo > 0.5 {
+                    let mid = (lo + hi) / 2
+                    if angleFromFrontDeg(of: point, atMs: mid) >= angleDeg { lo = mid } else { hi = mid }
+                }
+                return lo
+            }
+            later = t
+            t -= stepMs
+        }
+        return ms - lookbackMs
+    }
+
+    /// When a target due at `hitMs` becomes visible (fading in, usually on the far side) and when it
+    /// becomes targetable, on its final approach.
+    public func approach(of point: SurfacePoint, hitMs: Double, tuning: Tuning) -> Approach {
+        Approach(
+            appearMs: lastTimeBefore(hitMs, point: point, atLeastDeg: tuning.noteAppearAngleDeg),
+            targetableFromMs: lastTimeBefore(hitMs, point: point, atLeastDeg: tuning.targetableHalfAngleDeg)
+        )
+    }
+
+    public struct Approach: Sendable, Equatable {
+        /// Before this the target is hidden: it hasn't started the pass that ends at its hit time.
+        public var appearMs: Double
+        /// From this the target may be an input target (within the targetable angle on its final pass).
+        public var targetableFromMs: Double
+    }
+
     /// Projects an object-local position (for example a drag location already converted into the
     /// rotating object's space) onto the surface.
     public func surfacePoint(fromObjectLocal p: SIMD3<Double>) -> SurfacePoint? {
