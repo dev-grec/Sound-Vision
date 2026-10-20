@@ -11,6 +11,12 @@ extension SIMD3 where Scalar == Float {
     }
 }
 
+extension SIMD3 where Scalar == Double {
+    init(_ f: SIMD3<Float>) {
+        self.init(Double(f.x), Double(f.y), Double(f.z))
+    }
+}
+
 extension simd_quatf {
     init(_ q: simd_quatd) {
         self.init(vector: SIMD4<Float>(Float(q.vector.x), Float(q.vector.y), Float(q.vector.z), Float(q.vector.w)))

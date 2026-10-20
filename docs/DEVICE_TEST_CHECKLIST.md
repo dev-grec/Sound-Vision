@@ -40,10 +40,11 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 
 ## Sliders
 
-- [ ] **Drag mapping:** the white drag dot follows the hand where expected, so drags land on the slider. The placement entity sits under a head `AnchorEntity`, whose transform is hidden from apps, and the conversion may be wrong (DECISIONS D19). Check the input log's "drag began … point lat,lon" against the head's position.
+- [ ] **Drag mapping:** the white drag dot starts on the slider head and follows the hand, so you can stay on the ball. It's relative tracking (DECISIONS D19); also try launching the game while looking off to one side.
+- [ ] Release grace (150 ms) and quicker random sliders (0.5–1 s, up to 75°/s): fair to follow?
 - [ ] Follow tolerance (`sliderFollowToleranceDeg` 8°, falloff 20°): fair for hand dragging in the air?
 - [ ] Hand travel: a 45° slider on a 0.3 m sphere is about 24 cm of arc. Comfortable over 0.5–2 s?
-- [ ] Slider speed limit (60°/s) and random lengths (20–45°) and durations (1–4 beats).
+- [ ] Slider speed limit (75°/s), random lengths (20–45°) and durations (1–2 beats).
 - [ ] Track, end marker, ball and follow ring are readable; the drifting color (orange) is noticeable.
 - [ ] Simultaneous tap and drag gestures don't interfere: plain notes still register reliably.
 

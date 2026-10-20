@@ -127,6 +127,11 @@ public struct GameSession: Sendable {
         case .dragEnded(let point, let atMs):
             if let point { sample(point, atMs: atMs) }
             guard let i = activeSliderIndex else { return [] }
+            // Let go on the end marker a moment early: count the rest at the current accuracy.
+            let judgedMs = atMs - tuning.inputOffsetMs
+            if judgedMs >= notes[i].endMs - tuning.sliderReleaseGraceMs, let credit = followers[i]?.lastCredit {
+                followers[i]?.creditRemaining(afterMs: atMs, credit: credit)
+            }
             return [finishSlider(i, atMs: atMs)]
         }
     }

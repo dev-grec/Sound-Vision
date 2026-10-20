@@ -12,7 +12,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 - **Docs**: CLAUDE.md, ARCHITECTURE, BEATMAP_FORMAT, DECISIONS, DEVICE_TEST_CHECKLIST, this file.
 - **Beatmap format v1**, with loader (version check first) and validator (format rules plus playability rules: zone placement, crowding, rotation speed, stroke rules).
 - **Test map** `Maps/test-metronome/beatmap.json`: 120 BPM, 30 bars, synthesized click, 34 view-fixed tap notes: an opening and a closing section at one note per 2 s (room for sliders), and streams in between (left to right, right to left, diagonals, a circle). 2 strokes (load, not playable yet). A rotation speed change at beat 64. No sliders written in; random ones are added at runtime.
-- **RhythmCore engine** with 116 unit tests: geometry, rotation schedule, playfield and play area, note approach (pop-up and ring), tap judging, sliders (model, session, validation, random generator), scoring and combo, GameSession (inputs, auto-miss, offset), scripted input and autoplay (including sliders), stroke path, follow scoring, reveal state.
+- **RhythmCore engine** with 121 unit tests: geometry, rotation schedule, playfield and play area, note approach (pop-up and ring), tap judging, sliders (model, session, validation, random generator), scoring and combo, GameSession (inputs, auto-miss, offset), scripted input and autoplay (including sliders), stroke path, follow scoring, reveal state.
 - **Audio master clock** (`AudioEngineClock`) and the runtime click synthesizer.
 - **Glass rendering prototype** (Glass Lab, variants A/B/C). Findings are in DECISIONS D10. C is the gameplay default.
 - **Tap-note gameplay** (DECISIONS D17, D18, D9): a slowly rotating glass sphere in front of the player. Notes pop up at fixed spots around its front (they don't move), and a shrinking ring closes on each note exactly on the beat. Look-and-pinch via `SpatialTapGesture` on entities. A pinch outside the window ends the note as a Miss shown as "Early"/"Late". Judgment popups, a HUD (with an orange AUTOPLAY badge when autoplay is on), and a result summary in the launcher. Autoplay plays the whole map through the same input protocol.
@@ -20,7 +20,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 
 ### Verified in the simulator
 
-- Build succeeds with no Swift warnings. All 116 tests pass.
+- Build succeeds with no Swift warnings. All 121 tests pass.
 - Glass Lab A/B/C render as described in D10 (screenshots).
 - Full autoplay run of the test map (34 notes, with random sliders): 34/34 Perfect. The song ends 61.5 s after audio start (60 s plus a 1.5 s tail), which matches the audio clock.
 - A debug-build log compared each note's rendered position (RealityKit, relative to the placement entity) with RhythmCore's `Playfield.worldPosition`. They agree to about 1e-7 m.
@@ -32,7 +32,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 ### Not verified anywhere yet
 
 - Anything on the Vision Pro (see DEVICE_TEST_CHECKLIST.md).
-- **Dragging a slider by hand**, in the simulator or on device. Autoplay feeds drags straight into the session, so the gesture-to-sphere conversion is untested. Check the input log ("drag began … point lat,lon") and the white drag dot (DECISIONS D19 risk).
+- **Dragging a slider by hand with the relative DragTracker.** The owner's first hand test exposed the absolute-conversion bug (D19). The fix is unit-tested in RhythmCore (`DragTrackerTests`: a hidden anchor offset cancels out), but no one has dragged with it yet. Check the input log: "drag began … point lat,lon" should now match the head's position.
 - File-based audio (`"audio": {"file": ...}`). Implemented, but untested until real audio is supplied.
 
 ## Debugging input
@@ -60,5 +60,6 @@ Bug found and fixed in the simulator: notes due on a later revolution showed as 
 Owner feedback, same day: "buttons should pop up around the view of the player, and an outside ring tells you exactly when to click", not notes scrolling to the center. Redesigned to that (D17): pop-up notes, approach rings, a 45° play area, on-screen crowding; the test map was rewritten to spread notes around (29 notes). The owner's earlier runs had autoplay on by accident (the simulator was still running a scripted `-autoplay YES` launch); added the AUTOPLAY badge, Early/Late feedback and pinch logging.
 Owner feedback, round 2: "perfect works well, but early does not; make sure it ends on an early click" and "I don't want the buttons to be moving, rather more buttons that follow movement: to draw the eye to the right, multiple dots going left to right." Done: an off-window pinch ends the note as a Miss (D9); tap notes are fixed in view and the test map uses streams (D18).
 Owner feedback, round 3: "design sliders… a slider that can take us in a direction for a second… varying length… some random cardinal direction". Clarified via questions (D19). Built sliders as tap notes with a path, pinch-hold-drag with follow scoring, and random cardinal sliders for development. Test map respaced for room.
+Owner feedback, round 4: "sliders a bit quicker" and "Perfect on the click, followed the whole way, let go at the end bubble, and it counts as a Miss". The log showed every drag point near latitude 78°: the absolute gesture conversion was broken by the hidden head-anchor transform. Fixed with relative DragTracker (D19), added release grace, and sped up random sliders (0.5–1 s, cap 75°/s).
 **Rule for future sessions:** after scripted simulator runs, relaunch the app plain (`xcrun simctl launch booted com.devgrec.SoundVision`) so the owner doesn't inherit autoplay.
 Simulator verification is scripted: `scripts/run-sim.sh -autostart game -autoplay YES`, then `xcrun simctl io booted screenshot <file>`. The game logs `started`/`finished` lines under subsystem `com.devgrec.SoundVision`; read them with `xcrun simctl spawn booted log stream --predicate 'subsystem == "com.devgrec.SoundVision"'`.

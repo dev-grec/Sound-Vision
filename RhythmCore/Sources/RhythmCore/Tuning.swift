@@ -92,7 +92,10 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Below it the slider breaks: Miss.
     public var sliderBreakScore: Double = 0.5
     /// Validator: the slider ball may not move faster than this. [device]
-    public var maxSliderSpeedDegPerSec: Double = 60
+    public var maxSliderSpeedDegPerSec: Double = 75
+    /// Letting go this close to a slider's end counts the rest as followed at the latest sample's credit,
+    /// so releasing on the end marker a moment before the ball arrives isn't punished. [device]
+    public var sliderReleaseGraceMs: Double = 150
 
     // MARK: Random sliders (development only, until levels are designed)
 
@@ -100,8 +103,8 @@ public struct Tuning: Codable, Sendable, Equatable {
     public var randomSliderChance: Double = 0.5
     /// Random slider length range, in degrees of view.
     public var randomSliderLengthDeg: ClosedRange<Double> = 20...45
-    /// Random slider durations to choose from, in beats.
-    public var randomSliderBeats: [Double] = [1, 2, 3, 4]
+    /// Random slider durations to choose from, in beats (0.5–1 s at 120 BPM; owner asked for quicker sliders).
+    public var randomSliderBeats: [Double] = [1, 1.5, 2]
     /// A random slider must end at least this many beats before the next note's hit time.
     public var randomSliderGapBeats: Double = 1
 

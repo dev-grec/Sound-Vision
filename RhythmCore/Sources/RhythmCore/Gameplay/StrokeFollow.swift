@@ -132,6 +132,17 @@ public struct PathFollowScorer: Sendable {
         return c
     }
 
+    /// Credits every empty bucket after (raw) time `rawMs` with `credit`. Used when a slider is let go
+    /// just before its end, within the release grace.
+    public mutating func creditRemaining(afterMs rawMs: Double, credit: Double) {
+        let n = bucketSums.count
+        let first = min(Int(progress(atMs: rawMs - inputOffsetMs) * Double(n)), n - 1)
+        for b in first..<n where bucketCounts[b] == 0 {
+            bucketSums[b] = credit
+            bucketCounts[b] = 1
+        }
+    }
+
     /// Follow score, 0...1.
     public var followScore: Double {
         let perBucket = zip(bucketSums, bucketCounts).map { $1 > 0 ? $0 / Double($1) : 0 }

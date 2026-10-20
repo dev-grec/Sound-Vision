@@ -267,3 +267,64 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
         #expect(!result.added.contains(withSlider.notes[0].id))
     }
 }
+
+@Suite struct SliderReleaseTests {
+    let tuning = Tuning()
+
+    @Test func releasingOnTheEndMarkerJustEarlyKeepsPerfect() {
+        // Owner's report: Perfect head, followed all the way, let go at the end bubble → must be Perfect.
+        let note = sliderNote(durationMs: 500)
+        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4380, inputs: follow(note, to: 0.76))           // follows until 120 ms before the end
+        let end = s.advance(nowMs: 4380, inputs: [.dragEnded(point: note.sliderBallPoint(atMs: 4380), atMs: 4380)])
+        #expect(end == [.sliderEnded(noteID: "s", judgment: .perfect, followScore: 1, combo: 1)])
+    }
+
+    @Test func releasingWellBeforeTheEndIsNotGraced() {
+        let note = sliderNote(durationMs: 1000)
+        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4600, inputs: follow(note, to: 0.6))
+        let end = s.advance(nowMs: 4600, inputs: [.dragEnded(point: nil, atMs: 4600)])
+        guard case .sliderEnded(_, let judgment, let score, _) = end.first else { Issue.record("no sliderEnded"); return }
+        #expect(approxEqual(score, 0.6, tolerance: 0.051))
+        #expect(judgment == .great)
+    }
+
+    @Test func graceUsesTheLatestAccuracy() {
+        // Drifting at the end (credit 0) gets no free credit.
+        let note = sliderNote(durationMs: 500)
+        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4380, inputs: follow(note, to: 0.76) + [.dragChanged(point: SurfacePoint(lat: 40, lon: 0), atMs: 4380)])
+        let end = s.advance(nowMs: 4385, inputs: [.dragEnded(point: nil, atMs: 4385)])
+        guard case .sliderEnded(_, _, let score, _) = end.first else { Issue.record("no sliderEnded"); return }
+        #expect(score < 0.8)
+    }
+}
+
+@Suite struct DragTrackerTests {
+    @Test func unknownAnchorOffsetCancelsOut() throws {
+        // The object really sits 1.5 m up and 1 m ahead (hidden from the app). The player pinches a note
+        // at view (15, -35) and drags 30° worth of arc to the right.
+        let shape = SphereShape(radiusM: 0.3)
+        let hidden = SIMD3<Double>(0.2, 1.5, -1.0)
+        let head = SurfacePoint(lat: 15, lon: -35)
+        let target = SurfacePoint(lat: 15, lon: -5)
+        let tracker = DragTracker(startScene: hidden + shape.position(of: head), startPlacement: shape.position(of: head))
+        let p = try #require(tracker.viewPoint(forScene: hidden + shape.position(of: target), shape: shape))
+        #expect(p.angularDistanceDeg(to: target) < 1e-9)
+        // The start maps back to the head itself.
+        #expect(try #require(tracker.viewPoint(forScene: tracker.startScene, shape: shape)).angularDistanceDeg(to: head) < 1e-9)
+    }
+
+    @Test func handOffTheSurfaceStillProjects() throws {
+        // Hand 10 cm closer to the player than the surface: still maps to the same direction-ish point.
+        let shape = SphereShape(radiusM: 0.3)
+        let head = SurfacePoint(lat: 0, lon: 0)
+        let tracker = DragTracker(startScene: [0, 0, 0], startPlacement: shape.position(of: head))
+        let p = try #require(tracker.viewPoint(forScene: [0.1, 0, 0.1], shape: shape))
+        #expect(p.lon > 10 && p.lon < 25 && abs(p.lat) < 1e-9)
+    }
+}

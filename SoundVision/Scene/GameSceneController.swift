@@ -43,6 +43,7 @@ final class GameSceneController {
     @ObservationIgnored private var sliderVisuals: [Int: SliderVisuals] = [:]
     @ObservationIgnored private let dragCursor = DragCursor()
     @ObservationIgnored private var lastDragPoint: SurfacePoint?
+    @ObservationIgnored private var dragTracker: DragTracker?
     @ObservationIgnored private var updateSubscription: EventSubscription?
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var stopped = false
@@ -153,23 +154,33 @@ final class GameSceneController {
 
     /// A DragGesture update (pinch-and-hold): the press, then movement.
     func handleDrag(_ value: EntityTargetValue<DragGesture.Value>) {
-        guard !stopped, let rig else { return }
-        let point = surfacePoint(of: value, in: rig.placement)
+        guard !stopped, let rig, let session else { return }
+        if dragTracker == nil {
+            // Anchor the drag to where the pinched entity really is in the placement frame (relative
+            // transforms under the same anchor are reliable), and to the pinch's scene location.
+            let start = value.convert(value.startLocation3D, from: .local, to: .scene)
+            let target = value.entity.position(relativeTo: rig.placement)
+            dragTracker = DragTracker(startScene: SIMD3<Double>(start), startPlacement: SIMD3<Double>(target))
+        }
+        let point = viewPoint(of: value, shape: session.playfield.shape)
         lastDragPoint = point
         gestures.drag(on: value.entity, point: point)
     }
 
     func handleDragEnded(_ value: EntityTargetValue<DragGesture.Value>) {
-        guard !stopped, let rig else { return }
+        guard !stopped, let session else { return }
+        let point = viewPoint(of: value, shape: session.playfield.shape)
+        dragTracker = nil
         lastDragPoint = nil
-        gestures.dragEnded(point: surfacePoint(of: value, in: rig.placement))
+        gestures.dragEnded(point: point)
     }
 
-    /// The drag location projected onto the sphere, in view coordinates: convert it into the placement
-    /// frame (centered on the object, non-rotating) and take its direction from the center.
-    private func surfacePoint(of value: EntityTargetValue<DragGesture.Value>, in placement: Entity) -> SurfacePoint? {
-        let p = value.convert(value.location3D, from: .local, to: placement)
-        return SurfacePoint(direction: SIMD3<Double>(Double(p.x), Double(p.y), Double(p.z)))
+    /// The drag location on the sphere in view coordinates, from hand movement since the pinch
+    /// (DragTracker; absolute conversion is wrong under the head anchor, DECISIONS D19).
+    private func viewPoint(of value: EntityTargetValue<DragGesture.Value>, shape: any SurfaceShape) -> SurfacePoint? {
+        guard let dragTracker else { return nil }
+        let scene = value.convert(value.location3D, from: .local, to: .scene)
+        return dragTracker.viewPoint(forScene: SIMD3<Double>(scene), shape: shape)
     }
 
     func stop() {
