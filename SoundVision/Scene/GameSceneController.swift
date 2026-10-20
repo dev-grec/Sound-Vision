@@ -41,6 +41,7 @@ final class GameSceneController {
     @ObservationIgnored private let popups = JudgmentPopups()
     /// Slider visuals by note index (only notes with a slider).
     @ObservationIgnored private var sliderVisuals: [Int: SliderVisuals] = [:]
+    @ObservationIgnored private var sliderResults: [Int: SliderVisuals.Result] = [:]
     @ObservationIgnored private let dragCursor = DragCursor()
     @ObservationIgnored private var lastDragPoint: SurfacePoint?
     @ObservationIgnored private var dragTracker: DragTracker?
@@ -115,7 +116,7 @@ final class GameSceneController {
         self.rig = rig
         self.glass = glass
         hud = HUD(title: map.meta.title, total: session.notes.count, autoplay: model.autoplay,
-                  message: "Pinch each note when its ring closes. Sliders: hold and follow the ball.")
+                  message: "Pinch each note when its ring closes. Sliders: drag to the end as the timer hits 0.")
 
         updateSubscription = content.subscribe(to: SceneEvents.Update.self) { [weak self] _ in
             self?.frame()
@@ -226,12 +227,18 @@ final class GameSceneController {
             case .sliderStarted(let id, let head, let delta):
                 spawnPopup(.judgment(head), forNote: id, session: session, now: now)
                 log.info("slider \(id, privacy: .public) head \(head.rawValue, privacy: .public), delta \(Int(delta)) ms")
-            case .sliderEnded(let id, let judgment, let followScore, let combo):
-                if let note = session.notes.first(where: { $0.id == id }), let end = note.sliderBallPoint(atMs: note.endMs) {
-                    let pos = session.playfield.viewPosition(of: end)
-                    popups.spawn(.judgment(judgment), at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
+            case .sliderEnded(let id, let judgment, let finishDelta, let combo):
+                if let i = session.notes.firstIndex(where: { $0.id == id }) {
+                    let note = session.notes[i]
+                    sliderResults[i] = .init(judgment: judgment, finishDeltaMs: finishDelta)
+                    if let end = note.sliderPath?.points.last {
+                        // Finished too early → "Early"; otherwise the judgment (Miss if it never got there).
+                        let kind: JudgmentPopups.Kind = (judgment == .miss && (finishDelta ?? 0) < 0) ? .early : .judgment(judgment)
+                        let pos = session.playfield.viewPosition(of: end)
+                        popups.spawn(kind, at: SIMD3<Float>(pos + Playfield.front * 0.08), nowMs: now)
+                    }
                 }
-                log.info("slider \(id, privacy: .public) ended: \(judgment.rawValue, privacy: .public), follow \(Int(followScore * 100))%, combo \(combo)")
+                log.info("slider \(id, privacy: .public) ended: \(judgment.rawValue, privacy: .public), finish \(finishDelta.map { "\(Int($0)) ms" } ?? "none", privacy: .public), combo \(combo)")
             case .ignored(let target, let reason):
                 log.info("pinch on \(target ?? "nothing", privacy: .public) ignored: \(String(describing: reason), privacy: .public)")
             }
@@ -301,7 +308,7 @@ final class GameSceneController {
             let popIn = approach.hasAppeared(atMs: judgedNow)
                 ? Float(min(max((judgedNow - approach.appearMs) / tuning.noteFadeInMs, 0), 1)) : 0
             visuals.update(note: session.notes[i], state: session.states[i], popIn: popIn, judgedNow: judgedNow,
-                           nowMs: now, lastCredit: session.lastFollowCredit(ofNote: i))
+                           nowMs: now, progress: session.sliderProgress(ofNote: i), result: sliderResults[i], tuning: tuning)
         }
     }
 

@@ -41,11 +41,12 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 ## Sliders
 
 - [ ] **Drag mapping:** the white drag dot starts on the slider head and follows the hand, so you can stay on the ball. It's relative tracking (DECISIONS D19); also try launching the game while looking off to one side.
-- [ ] Release grace (150 ms) and quicker random sliders (0.5–1 s, up to 75°/s): fair to follow?
-- [ ] Follow tolerance (`sliderFollowToleranceDeg` 8°, falloff 20°): fair for hand dragging in the air?
+- [ ] Slider finish windows (Perfect ±100, Great ±180, Good ±260 ms): fair for dragging with real latency?
+- [ ] Grab radius (15°): the knob keeps following during natural hand wobble but stops when you're clearly off the track. End tolerance (1.5°): reaching the end feels deliberate, not accidental.
+- [ ] The timer above the slider is readable and useful as a pacing cue (placeholder UI; DECISIONS D20).
 - [ ] Hand travel: a 45° slider on a 0.3 m sphere is about 24 cm of arc. Comfortable over 0.5–2 s?
 - [ ] Slider speed limit (75°/s), random lengths (20–45°) and durations (1–2 beats).
-- [ ] Track, end marker, ball and follow ring are readable; the drifting color (orange) is noticeable.
+- [ ] Track, end marker and knob are readable; the lost color (orange) is noticeable.
 - [ ] Simultaneous tap and drag gestures don't interfere: plain notes still register reliably.
 
 ## Audio and timing

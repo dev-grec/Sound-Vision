@@ -5,12 +5,13 @@ import Foundation
 /// Pure value type: the app drives it once per frame with `advance(nowMs:inputs:)`, where `nowMs`
 /// is the master clock (audio position). Nothing in here reads a clock or counts frames.
 ///
-/// Notes: plain tap notes, and tap notes with a slider (pinch the head on the beat, hold, drag along
-/// the path following the ball). Strokes are loaded and validated but not yet played.
+/// Notes: plain tap notes, and tap notes with a slider (pinch the head on the beat, then drag the knob
+/// along the track and reach the end at the slider's target time, DECISIONS D20). Strokes are loaded and
+/// validated but not yet played.
 public struct GameSession: Sendable {
     public enum NoteState: Sendable, Equatable {
         case pending
-        /// A slider whose head was hit and that is being followed. `deltaMs` is the head's timing error.
+        /// A slider whose head was hit and whose knob is being dragged. `deltaMs` is the head's timing error.
         case holding(head: Judgment, deltaMs: Double, atMs: Double)
         /// Final. `deltaMs` is the (head) pinch's signed timing error (positive = late); `atMs` the raw
         /// time it was judged (the pinch, or for a slider its release or end).
@@ -50,10 +51,12 @@ public struct GameSession: Sendable {
         /// (positive = late), or nil for a note that timed out. A Miss with a delta is an off-beat
         /// pinch: negative = Early, positive = Late.
         case judged(noteID: String, judgment: Judgment, deltaMs: Double?, combo: Int)
-        /// A slider's head was hit on time; the player now follows the ball. Not scored yet.
+        /// A slider's head was hit on time; the player now drags the knob. Not scored yet.
         case sliderStarted(noteID: String, head: Judgment, deltaMs: Double)
-        /// A slider finished (released or reached its end). `judgment` is final; Miss means it broke.
-        case sliderEnded(noteID: String, judgment: Judgment, followScore: Double, combo: Int)
+        /// A slider finished. `judgment` is final: the worse of the head and the finish. `finishDeltaMs`
+        /// is when the knob reached the end relative to the target time (negative = early), or nil if it
+        /// never got there (released early or ran out of time).
+        case sliderEnded(noteID: String, judgment: Judgment, finishDeltaMs: Double?, combo: Int)
         case ignored(targetID: String?, reason: IgnoredReason)
     }
 
@@ -70,9 +73,9 @@ public struct GameSession: Sendable {
     /// Clock time after which the session is over (once every note is judged).
     public let endMs: Double
 
-    /// Follow scorers of sliders being held, by note index.
-    private var followers: [Int: PathFollowScorer] = [:]
-    /// The slider the current drag is following, if any.
+    /// Sliders being dragged, by note index.
+    private var sliders: [Int: SliderProgress] = [:]
+    /// The slider the current drag is moving, if any.
     public private(set) var activeSliderIndex: Int?
 
     private let indexByID: [String: Int]
@@ -90,7 +93,7 @@ public struct GameSession: Sendable {
         self.approaches = sorted.map { NoteApproach(hitMs: $0.timeMs, tuning: tuning) }
         self.states = Array(repeating: .pending, count: sorted.count)
         self.indexByID = Dictionary(sorted.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let lastNoteMs = sorted.map { $0.endMs + tuning.goodWindowMs + tuning.inputOffsetMs }.max() ?? 0
+        let lastNoteMs = sorted.map { $0.endMs + max(tuning.goodWindowMs, tuning.sliderEndGoodWindowMs) + tuning.inputOffsetMs }.max() ?? 0
         let duration = songDurationMs ?? beatmap.definedDurationMs ?? lastNoteMs
         self.endMs = max(duration, lastNoteMs)
     }
@@ -119,20 +122,14 @@ public struct GameSession: Sendable {
             return [press(targetID: targetID, atMs: atMs)]
         case .dragBegan(let targetID, let point, let atMs):
             let event = press(targetID: targetID, atMs: atMs)
-            if let point { sample(point, atMs: atMs) }
-            return [event]
+            return [event] + (point.map { sample($0, atMs: atMs) } ?? [])
         case .dragChanged(let point, let atMs):
-            if let point { sample(point, atMs: atMs) }
-            return []
+            return point.map { sample($0, atMs: atMs) } ?? []
         case .dragEnded(let point, let atMs):
-            if let point { sample(point, atMs: atMs) }
-            guard let i = activeSliderIndex else { return [] }
-            // Let go on the end marker a moment early: count the rest at the current accuracy.
-            let judgedMs = atMs - tuning.inputOffsetMs
-            if judgedMs >= notes[i].endMs - tuning.sliderReleaseGraceMs, let credit = followers[i]?.lastCredit {
-                followers[i]?.creditRemaining(afterMs: atMs, credit: credit)
-            }
-            return [finishSlider(i, atMs: atMs)]
+            var events = point.map { sample($0, atMs: atMs) } ?? []
+            // Let go before the knob reached the end: the slider breaks.
+            if let i = activeSliderIndex { events.append(finishSlider(i, atMs: atMs)) }
+            return events
         }
     }
 
@@ -156,11 +153,11 @@ public struct GameSession: Sendable {
         // window it's judged on timing; outside it's a Miss that the app shows as Early or Late.
         let delta = TapJudge.delta(inputMs: atMs, targetMs: note.timeMs, tuning: tuning)
         let judgment = TapJudge.judgment(forDeltaMs: delta, tuning: tuning) ?? .miss
-        if judgment != .miss, let follower = PathFollowScorer(sliderOf: note, tuning: tuning) {
-            // Slider head hit: start following. Scored when the slider finishes.
+        if judgment != .miss, note.slider != nil {
+            // Slider head hit: the knob now follows the drag. Scored when the slider finishes.
             if let previous = activeSliderIndex, previous != index { _ = finishSlider(previous, atMs: atMs) }
             states[index] = .holding(head: judgment, deltaMs: delta, atMs: atMs)
-            followers[index] = follower
+            sliders[index] = SliderProgress(note: note)
             activeSliderIndex = index
             return .sliderStarted(noteID: id, head: judgment, deltaMs: delta)
         }
@@ -172,45 +169,42 @@ public struct GameSession: Sendable {
         return .judged(noteID: id, judgment: judgment, deltaMs: delta, combo: score.combo)
     }
 
-    private mutating func sample(_ point: SurfacePoint, atMs: Double) {
-        guard let i = activeSliderIndex else { return }
-        followers[i]?.addSample(point: point, atMs: atMs)
+    /// A drag sample moves the active slider's knob; reaching the end finishes the slider.
+    private mutating func sample(_ point: SurfacePoint, atMs: Double) -> [Event] {
+        guard let i = activeSliderIndex, var progress = sliders[i] else { return [] }
+        let finished = progress.add(point, atMs: atMs, tuning: tuning)
+        sliders[i] = progress
+        return finished ? [finishSlider(i, atMs: atMs)] : []
     }
 
-    /// The final judgment of a slider from its head judgment and follow score.
-    public static func sliderJudgment(head: Judgment, followScore: Double, tuning: Tuning) -> Judgment {
-        if followScore >= tuning.sliderKeepJudgmentScore { return head }
-        if followScore >= tuning.sliderBreakScore {
-            switch head {
-            case .perfect: return .great
-            case .great, .good: return .good
-            case .miss: return .miss
-            }
-        }
-        return .miss
+    /// The final judgment of a slider: the worse of its head and its finish. A finish outside the Good
+    /// window (or no finish at all) is a Miss.
+    public static func sliderJudgment(head: Judgment, finishDeltaMs: Double?, tuning: Tuning) -> Judgment {
+        guard let d = finishDeltaMs, let finish = SliderProgress.finishJudgment(deltaMs: d, tuning: tuning) else { return .miss }
+        return max(head, finish) // Judgment orders best first, so max is the worse one
     }
 
     private mutating func finishSlider(_ index: Int, atMs: Double) -> Event {
         guard case .holding(let head, let delta, _) = states[index] else {
             return .ignored(targetID: notes[index].id, reason: .alreadyJudged)
         }
-        let followScore = followers[index]?.followScore ?? 0
-        let judgment = Self.sliderJudgment(head: head, followScore: followScore, tuning: tuning)
+        let finishDelta = sliders[index]?.finishedAtMs.map { ($0 - tuning.inputOffsetMs) - notes[index].endMs }
+        let judgment = Self.sliderJudgment(head: head, finishDeltaMs: finishDelta, tuning: tuning)
         states[index] = judgment == .miss
             ? .missed(atMs: atMs, deltaMs: nil)
             : .hit(judgment, deltaMs: delta, atMs: atMs)
-        followers[index] = nil
+        sliders[index] = nil
         if activeSliderIndex == index { activeSliderIndex = nil }
         score.record(judgment, tuning: tuning)
         advanceFirstPending()
-        return .sliderEnded(noteID: notes[index].id, judgment: judgment, followScore: followScore, combo: score.combo)
+        return .sliderEnded(noteID: notes[index].id, judgment: judgment, finishDeltaMs: finishDelta, combo: score.combo)
     }
 
-    /// A held slider whose end has passed finishes on its own (the player may still be holding).
+    /// A held slider whose knob hasn't reached the end by the close of its finish window is a Miss.
     private mutating func finishSlidersPastTheirEnd(nowMs: Double) -> [Event] {
         let judgedNow = nowMs - tuning.inputOffsetMs
-        return followers.keys.sorted()
-            .filter { judgedNow > notes[$0].endMs }
+        return sliders.keys.sorted()
+            .filter { judgedNow > notes[$0].endMs + tuning.sliderEndGoodWindowMs }
             .map { finishSlider($0, atMs: nowMs) }
     }
 
@@ -247,10 +241,9 @@ public struct GameSession: Sendable {
         approaches[index].hasAppeared(atMs: ms - tuning.inputOffsetMs)
     }
 
-    /// The credit of the latest drag sample on a held slider (for live "following / not following"
-    /// feedback), nil if the slider isn't held or has no samples yet.
-    public func lastFollowCredit(ofNote index: Int) -> Double? {
-        followers[index]?.lastCredit
+    /// The knob state of a held slider (for drawing the knob), nil if the slider isn't held.
+    public func sliderProgress(ofNote index: Int) -> SliderProgress? {
+        sliders[index]
     }
 
     public var allNotesJudged: Bool { firstPendingIndex >= notes.count }

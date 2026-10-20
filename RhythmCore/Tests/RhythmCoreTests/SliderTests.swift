@@ -49,128 +49,6 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
         #expect(json.components(separatedBy: "\"slider\"").count == 2) // only the slider note has the key
     }
 
-    @Test func sliderJudgmentTable() {
-        let t = Tuning()
-        #expect(GameSession.sliderJudgment(head: .perfect, followScore: 0.9, tuning: t) == .perfect)
-        #expect(GameSession.sliderJudgment(head: .perfect, followScore: 0.6, tuning: t) == .great)
-        #expect(GameSession.sliderJudgment(head: .great, followScore: 0.6, tuning: t) == .good)
-        #expect(GameSession.sliderJudgment(head: .good, followScore: 0.6, tuning: t) == .good)
-        #expect(GameSession.sliderJudgment(head: .perfect, followScore: 0.49, tuning: t) == .miss)
-    }
-}
-
-@Suite struct SliderSessionTests {
-    let tuning = Tuning()
-
-    func session(_ notes: [TapNote]) -> GameSession {
-        GameSession(beatmap: Fixtures.map(notes: notes), tuning: tuning)
-    }
-
-    @Test func perfectHeadAndFollowKeepsPerfect() {
-        let note = sliderNote()
-        var s = session([note])
-        let start = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        #expect(start == [.sliderStarted(noteID: "s", head: .perfect, deltaMs: 0)])
-        #expect(s.state(ofNote: "s") == .holding(head: .perfect, deltaMs: 0, atMs: 4000))
-        #expect(s.activeSliderIndex == 0)
-        #expect(s.score.judgedCount == 0) // not scored until it finishes
-        _ = s.advance(nowMs: 5000, inputs: follow(note))
-        let end = s.advance(nowMs: 5010, inputs: [.dragEnded(point: note.sliderBallPoint(atMs: 5000), atMs: 5010)])
-        #expect(end == [.sliderEnded(noteID: "s", judgment: .perfect, followScore: 1, combo: 1)])
-        #expect(s.score.score == tuning.scorePerfect)
-        #expect(s.allNotesJudged)
-    }
-
-    @Test func sloppyFollowDropsATier() {
-        // 14° off the ball: credit 1 - (14 - 8) / 12 = 0.5 → Perfect head drops to Great.
-        let note = sliderNote()
-        var s = session([note])
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 5000, inputs: follow(note, offLat: 14))
-        let end = s.advance(nowMs: 5010, inputs: [.dragEnded(point: nil, atMs: 5010)])
-        guard case .sliderEnded(_, let judgment, let score, _) = end.first else { Issue.record("no sliderEnded"); return }
-        #expect(approxEqual(score, 0.5, tolerance: 0.02))
-        #expect(judgment == .great)
-    }
-
-    @Test func lettingGoEarlyBreaksTheSlider() {
-        let note = sliderNote()
-        var s = session([note])
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 4350, inputs: follow(note, to: 0.35))
-        let end = s.advance(nowMs: 4360, inputs: [.dragEnded(point: nil, atMs: 4360)])
-        guard case .sliderEnded(_, let judgment, let score, let combo) = end.first else { Issue.record("no sliderEnded"); return }
-        #expect(score < 0.5)
-        #expect(judgment == .miss && combo == 0)
-        #expect(s.state(ofNote: "s") == .missed(atMs: 4360, deltaMs: nil))
-    }
-
-    @Test func earlyHeadEndsTheSliderAsEarly() {
-        var s = session([sliderNote()])
-        let events = s.advance(nowMs: 3600, inputs: [.dragBegan(targetID: "s", point: nil, atMs: 3600)])
-        #expect(events == [.judged(noteID: "s", judgment: .miss, deltaMs: -400, combo: 0)])
-        #expect(s.activeSliderIndex == nil)
-    }
-
-    @Test func heldPastTheEndFinishesOnItsOwn() {
-        let note = sliderNote()
-        var s = session([note])
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 5000, inputs: follow(note))
-        #expect(s.advance(nowMs: 5000, inputs: []).isEmpty) // exactly at the end: still held
-        let events = s.advance(nowMs: 5020, inputs: [])
-        #expect(events == [.sliderEnded(noteID: "s", judgment: .perfect, followScore: 1, combo: 1)])
-        // The late release finds nothing to end.
-        #expect(s.advance(nowMs: 5100, inputs: [.dragEnded(point: nil, atMs: 5100)]).isEmpty)
-    }
-
-    @Test func tapWithoutDraggingBreaksTheSlider() {
-        // A SpatialTap (no drag) hits the head, but the ball is never followed.
-        var s = session([sliderNote()])
-        #expect(s.advance(nowMs: 4000, inputs: [.tap(targetID: "s", atMs: 4000)]).first == .sliderStarted(noteID: "s", head: .perfect, deltaMs: 0))
-        let events = s.advance(nowMs: 5100, inputs: [])
-        guard case .sliderEnded(_, .miss, _, _) = events.first else { Issue.record("expected a broken slider, got \(events)"); return }
-    }
-
-    @Test func secondGestureForTheSamePinchIsIgnored() {
-        // DragGesture reports the press, SpatialTapGesture the release: only the first counts.
-        let note = sliderNote()
-        var s = session([note])
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        let events = s.advance(nowMs: 4080, inputs: [.tap(targetID: "s", atMs: 4080)])
-        #expect(events == [.ignored(targetID: "s", reason: .alreadyJudged)])
-        // Same for a plain note pinched by drag first.
-        var p = session([Fixtures.note("n", atMs: 4000)])
-        _ = p.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "n", point: nil, atMs: 4000)])
-        #expect(p.advance(nowMs: 4080, inputs: [.tap(targetID: "n", atMs: 4080)]) == [.ignored(targetID: "n", reason: .alreadyJudged)])
-        #expect(p.score.count(.perfect) == 1)
-    }
-
-    @Test func liveFollowCredit() {
-        let note = sliderNote()
-        var s = session([note])
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 4500, inputs: [.dragChanged(point: SurfacePoint(lat: 30, lon: 15), atMs: 4500)])
-        #expect(s.lastFollowCredit(ofNote: 0) == 0)
-        _ = s.advance(nowMs: 4600, inputs: [.dragChanged(point: note.sliderBallPoint(atMs: 4600), atMs: 4600)])
-        #expect(s.lastFollowCredit(ofNote: 0) == 1)
-    }
-
-    @Test func autoplayPlaysSlidersPerfectly() {
-        let notes = [Fixtures.note("a", atMs: 4000, lon: -30), sliderNote("b", atMs: 6000, lat: 10, lon: -20),
-                     sliderNote("c", atMs: 9000, lat: -10, lon: 20, direction: .up, lengthDeg: 25, durationMs: 1500),
-                     Fixtures.note("d", atMs: 12000)]
-        let map = Fixtures.map(notes: notes)
-        var s = GameSession(beatmap: map, tuning: tuning)
-        var input = ScriptedInputSource.autoplay(for: map, tuning: tuning)
-        var now = 0.0
-        while !s.isFinished(nowMs: now) {
-            now += 11.1
-            _ = s.advance(nowMs: now, inputs: input.pollEvents(nowMs: now))
-        }
-        #expect(s.score.count(.perfect) == 4)
-        #expect(s.score.maxCombo == 4)
-    }
 }
 
 @Suite struct SliderValidatorTests {
@@ -268,42 +146,6 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
     }
 }
 
-@Suite struct SliderReleaseTests {
-    let tuning = Tuning()
-
-    @Test func releasingOnTheEndMarkerJustEarlyKeepsPerfect() {
-        // Owner's report: Perfect head, followed all the way, let go at the end bubble → must be Perfect.
-        let note = sliderNote(durationMs: 500)
-        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 4380, inputs: follow(note, to: 0.76))           // follows until 120 ms before the end
-        let end = s.advance(nowMs: 4380, inputs: [.dragEnded(point: note.sliderBallPoint(atMs: 4380), atMs: 4380)])
-        #expect(end == [.sliderEnded(noteID: "s", judgment: .perfect, followScore: 1, combo: 1)])
-    }
-
-    @Test func releasingWellBeforeTheEndIsNotGraced() {
-        let note = sliderNote(durationMs: 1000)
-        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 4600, inputs: follow(note, to: 0.6))
-        let end = s.advance(nowMs: 4600, inputs: [.dragEnded(point: nil, atMs: 4600)])
-        guard case .sliderEnded(_, let judgment, let score, _) = end.first else { Issue.record("no sliderEnded"); return }
-        #expect(approxEqual(score, 0.6, tolerance: 0.051))
-        #expect(judgment == .great)
-    }
-
-    @Test func graceUsesTheLatestAccuracy() {
-        // Drifting at the end (credit 0) gets no free credit.
-        let note = sliderNote(durationMs: 500)
-        var s = GameSession(beatmap: Fixtures.map(notes: [note]), tuning: tuning)
-        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
-        _ = s.advance(nowMs: 4380, inputs: follow(note, to: 0.76) + [.dragChanged(point: SurfacePoint(lat: 40, lon: 0), atMs: 4380)])
-        let end = s.advance(nowMs: 4385, inputs: [.dragEnded(point: nil, atMs: 4385)])
-        guard case .sliderEnded(_, _, let score, _) = end.first else { Issue.record("no sliderEnded"); return }
-        #expect(score < 0.8)
-    }
-}
-
 @Suite struct DragTrackerTests {
     @Test func unknownAnchorOffsetCancelsOut() throws {
         // The object really sits 1.5 m up and 1 m ahead (hidden from the app). The player pinches a note
@@ -326,5 +168,180 @@ private func follow(_ note: TapNote, from: Double = 0, to: Double = 1, offLat: D
         let tracker = DragTracker(startScene: [0, 0, 0], startPlacement: shape.position(of: head))
         let p = try #require(tracker.viewPoint(forScene: [0.1, 0, 0.1], shape: shape))
         #expect(p.lon > 10 && p.lon < 25 && abs(p.lat) < 1e-9)
+    }
+}
+
+@Suite struct ClosestPointTests {
+    @Test func projectsOntoStraightPath() {
+        let path = StrokePath(points: [SurfacePoint(lat: 0, lon: 0), SurfacePoint(lat: 0, lon: 40)])
+        let mid = path.closest(to: SurfacePoint(lat: 5, lon: 10))
+        #expect(approxEqual(mid.fraction, 0.25, tolerance: 0.01))
+        #expect(approxEqual(mid.distanceDeg, 5, tolerance: 0.05))
+        #expect(path.closest(to: SurfacePoint(lat: 0, lon: 60)).fraction == 1)  // beyond the end → the end
+        #expect(path.closest(to: SurfacePoint(lat: 0, lon: -20)).fraction == 0) // before the start → the start
+    }
+
+    @Test func projectsOntoBentPath() {
+        let path = StrokePath(points: [SurfacePoint(lat: 0, lon: 0), SurfacePoint(lat: 0, lon: 20), SurfacePoint(lat: 20, lon: 20)])
+        let c = path.closest(to: SurfacePoint(lat: 10, lon: 22))
+        #expect(approxEqual(c.fraction, 0.75, tolerance: 0.01))
+    }
+}
+
+@Suite struct SliderProgressTests {
+    let tuning = Tuning()
+
+    @Test func knobFollowsTheDragAndNeverGoesBack() {
+        var p = SliderProgress(note: sliderNote())              // right 30° from (0,0)
+        p.add(SurfacePoint(lat: 3, lon: 15), atMs: 4500, tuning: tuning)
+        #expect(approxEqual(p.progress, 0.5, tolerance: 0.01) && p.onTrack)
+        p.add(SurfacePoint(lat: 0, lon: 6), atMs: 4600, tuning: tuning)  // dragging back doesn't rewind
+        #expect(approxEqual(p.progress, 0.5, tolerance: 0.01))
+        p.add(SurfacePoint(lat: 30, lon: 25), atMs: 4700, tuning: tuning) // far off the track: lost, knob stays
+        #expect(!p.onTrack && approxEqual(p.progress, 0.5, tolerance: 0.01))
+    }
+
+    @Test func finishesWithinTheEndTolerance() {
+        var p = SliderProgress(note: sliderNote())
+        let notYet = p.add(SurfacePoint(lat: 0, lon: 28), atMs: 4900, tuning: tuning)
+        let done = p.add(SurfacePoint(lat: 0, lon: 28.6), atMs: 4950, tuning: tuning)
+        #expect(!notYet && done)
+        #expect(p.finishedAtMs == 4950 && p.progress == 1)
+    }
+
+    @Test(arguments: [(0.0, Judgment.perfect), (100, .perfect), (-100, .perfect), (150, .great), (-250, .good)])
+    func finishWindows(delta: Double, expected: Judgment) {
+        #expect(SliderProgress.finishJudgment(deltaMs: delta, tuning: tuning) == expected)
+    }
+
+    @Test func outsideTheWindowIsNoJudgment() {
+        #expect(SliderProgress.finishJudgment(deltaMs: -261, tuning: tuning) == nil)
+    }
+
+    @Test func finalJudgmentIsTheWorseOfHeadAndFinish() {
+        #expect(GameSession.sliderJudgment(head: .perfect, finishDeltaMs: 20, tuning: tuning) == .perfect)
+        #expect(GameSession.sliderJudgment(head: .great, finishDeltaMs: 20, tuning: tuning) == .great)
+        #expect(GameSession.sliderJudgment(head: .perfect, finishDeltaMs: -200, tuning: tuning) == .good)
+        #expect(GameSession.sliderJudgment(head: .perfect, finishDeltaMs: -400, tuning: tuning) == .miss)
+        #expect(GameSession.sliderJudgment(head: .perfect, finishDeltaMs: nil, tuning: tuning) == .miss)
+    }
+}
+
+@Suite struct SliderSessionTests {
+    let tuning = Tuning()
+
+    func session(_ notes: [TapNote]) -> GameSession {
+        GameSession(beatmap: Fixtures.map(notes: notes), tuning: tuning)
+    }
+
+    /// Drag samples along the track at the slider's own pace, scaled: pace 2 = twice as fast.
+    func drag(_ note: TapNote, pace: Double = 1, until fraction: Double = 1) -> [InputEvent] {
+        let slider = note.slider!
+        let path = note.sliderPath!
+        var events: [InputEvent] = []
+        var f = 0.0
+        while f <= fraction + 1e-9 {
+            events.append(.dragChanged(point: path.point(atFraction: f), atMs: note.timeMs + f * slider.durationMs / pace))
+            f += 0.02
+        }
+        return events
+    }
+
+    @Test func ownersCase_perfectHeadFollowAllTheWayReleaseAtEnd_isPerfect() {
+        let note = sliderNote()
+        var s = session([note])
+        let start = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        #expect(start == [.sliderStarted(noteID: "s", head: .perfect, deltaMs: 0)])
+        let events = s.advance(nowMs: 5000, inputs: drag(note))
+        guard case .sliderEnded(_, .perfect, let finish?, 1)? = events.last else { Issue.record("\(events)"); return }
+        #expect(abs(finish) <= tuning.sliderEndPerfectWindowMs)
+        // Letting go afterward changes nothing.
+        #expect(s.advance(nowMs: 5050, inputs: [.dragEnded(point: nil, atMs: 5050)]).isEmpty)
+        #expect(s.score.count(.perfect) == 1)
+    }
+
+    @Test func finishingTooFastIsEarly() {
+        let note = sliderNote(durationMs: 1000)
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        let events = s.advance(nowMs: 4500, inputs: drag(note, pace: 2.5)) // done in ~400 ms instead of 1000
+        guard case .sliderEnded(_, .miss, let finish?, 0)? = events.last else { Issue.record("\(events)"); return }
+        #expect(finish < -tuning.sliderEndGoodWindowMs)
+    }
+
+    @Test func slightlyFastIsGreat() {
+        let note = sliderNote(durationMs: 1000)
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        let events = s.advance(nowMs: 5000, inputs: drag(note, pace: 1.17)) // ~150 ms early
+        guard case .sliderEnded(_, .great, _, _)? = events.last else { Issue.record("\(events)"); return }
+    }
+
+    @Test func notFinishingInTimeIsAMiss() {
+        let note = sliderNote()
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 5000, inputs: drag(note, pace: 0.5, until: 0.5)) // only halfway by 5000
+        #expect(s.advance(nowMs: 5260, inputs: []).isEmpty)                  // still inside the Good window
+        let events = s.advance(nowMs: 5300, inputs: [])
+        #expect(events == [.sliderEnded(noteID: "s", judgment: .miss, finishDeltaMs: nil, combo: 0)])
+    }
+
+    @Test func lettingGoBeforeTheEndBreaksTheSlider() {
+        let note = sliderNote()
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4500, inputs: drag(note, until: 0.5))
+        let events = s.advance(nowMs: 4510, inputs: [.dragEnded(point: nil, atMs: 4510)])
+        #expect(events == [.sliderEnded(noteID: "s", judgment: .miss, finishDeltaMs: nil, combo: 0)])
+    }
+
+    @Test func greatHeadCapsTheSliderAtGreat() {
+        let note = sliderNote()
+        var s = session([note])
+        _ = s.advance(nowMs: 4090, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4090)]) // head 90 ms late
+        let events = s.advance(nowMs: 5000, inputs: drag(note))
+        guard case .sliderEnded(_, .great, _, _)? = events.last else { Issue.record("\(events)"); return }
+    }
+
+    @Test func earlyHeadEndsTheSliderAsEarly() {
+        var s = session([sliderNote()])
+        let events = s.advance(nowMs: 3600, inputs: [.dragBegan(targetID: "s", point: nil, atMs: 3600)])
+        #expect(events == [.judged(noteID: "s", judgment: .miss, deltaMs: -400, combo: 0)])
+        #expect(s.activeSliderIndex == nil)
+    }
+
+    @Test func secondGestureForTheSamePinchIsIgnored() {
+        let note = sliderNote()
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        #expect(s.advance(nowMs: 4080, inputs: [.tap(targetID: "s", atMs: 4080)]) == [.ignored(targetID: "s", reason: .alreadyJudged)])
+        var p = session([Fixtures.note("n", atMs: 4000)])
+        _ = p.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "n", point: nil, atMs: 4000)])
+        #expect(p.advance(nowMs: 4080, inputs: [.tap(targetID: "n", atMs: 4080)]) == [.ignored(targetID: "n", reason: .alreadyJudged)])
+        #expect(p.score.count(.perfect) == 1)
+    }
+
+    @Test func knobStateIsExposedForDrawing() {
+        let note = sliderNote()
+        var s = session([note])
+        _ = s.advance(nowMs: 4000, inputs: [.dragBegan(targetID: "s", point: note.at, atMs: 4000)])
+        _ = s.advance(nowMs: 4500, inputs: [.dragChanged(point: SurfacePoint(lat: 0, lon: 15), atMs: 4500)])
+        #expect(approxEqual(s.sliderProgress(ofNote: 0)!.knobPoint.lon, 15, tolerance: 0.01))
+    }
+
+    @Test func autoplayPlaysSlidersPerfectly() {
+        let notes = [Fixtures.note("a", atMs: 4000, lon: -30), sliderNote("b", atMs: 6000, lat: 10, lon: -20),
+                     sliderNote("c", atMs: 9000, lat: -10, lon: 20, direction: .up, lengthDeg: 25, durationMs: 750),
+                     Fixtures.note("d", atMs: 12000)]
+        let map = Fixtures.map(notes: notes)
+        var s = GameSession(beatmap: map, tuning: tuning)
+        var input = ScriptedInputSource.autoplay(for: map, tuning: tuning)
+        var now = 0.0
+        while !s.isFinished(nowMs: now) {
+            now += 11.1
+            _ = s.advance(nowMs: now, inputs: input.pollEvents(nowMs: now))
+        }
+        #expect(s.score.count(.perfect) == 4)
     }
 }

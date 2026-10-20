@@ -40,13 +40,47 @@ public struct StrokePath: Sendable, Equatable {
         return (0..<count).map { point(atFraction: Double($0) / Double(count - 1)) }
     }
 
+    /// The point on the path closest to `point`: its fraction of the total arc length (0...1) and its
+    /// angular distance from `point` in degrees. A point beyond either end projects onto that end.
+    public func closest(to point: SurfacePoint) -> (fraction: Double, distanceDeg: Double) {
+        let p = point.unitVector
+        guard units.count > 1, totalAngleDeg > 0 else { return (0, angleBetweenDeg(p, units.first ?? p)) }
+        var best = (fraction: 0.0, distanceDeg: Double.infinity)
+        for i in 1..<units.count {
+            let a = units[i - 1], b = units[i]
+            let segLen = cumulative[i] - cumulative[i - 1]
+            // Closest point on the great-circle arc a→b: project onto the arc's plane, then clamp to the arc.
+            var along: Double
+            let n = simd_cross(a, b)
+            if simd_length(n) > 1e-12 {
+                let onPlane = p - simd_dot(p, simd_normalize(n)) * simd_normalize(n)
+                if simd_length(onPlane) > 1e-12 {
+                    let q = simd_normalize(onPlane)
+                    let fromA = angleBetweenDeg(a, q), toB = angleBetweenDeg(q, b)
+                    along = abs(fromA + toB - segLen) < 1e-6 ? fromA : (fromA < toB ? 0 : segLen)
+                } else {
+                    along = 0
+                }
+            } else {
+                along = 0
+            }
+            let t = segLen > 0 ? along / segLen : 0
+            let c = slerpUnit(a, b, t)
+            let d = angleBetweenDeg(p, c)
+            if d < best.distanceDeg {
+                best = ((cumulative[i - 1] + along) / totalAngleDeg, d)
+            }
+        }
+        return best
+    }
+
     /// Longest single segment in degrees (the validator limits this; near-180 arcs are ambiguous).
     public var longestSegmentDeg: Double {
         zip(cumulative, cumulative.dropFirst()).map { $1 - $0 }.max() ?? 0
     }
 }
 
-/// Scores how closely a drag follows a moving guide along a path (a stroke's guide or a slider's ball).
+/// Scores how closely a drag follows a moving guide along a path (a stroke's guide).
 ///
 /// The guide's duration is split into `buckets` equal time buckets. Each drag sample earns credit by its
 /// angular distance from where the guide was at that moment: full credit within `toleranceDeg`, falling
@@ -88,14 +122,6 @@ public struct PathFollowScorer: Sendable {
                   buckets: tuning.strokeScoreBuckets, inputOffsetMs: tuning.inputOffsetMs)
     }
 
-    /// A slider's ball, with the slider tolerances. Nil if the note has no slider.
-    public init?(sliderOf note: TapNote, tuning: Tuning) {
-        guard let slider = note.slider, let path = note.sliderPath else { return nil }
-        self.init(path: path, startMs: note.timeMs, durationMs: slider.durationMs,
-                  toleranceDeg: tuning.sliderFollowToleranceDeg, falloffDeg: tuning.sliderFollowFalloffDeg,
-                  buckets: tuning.strokeScoreBuckets, inputOffsetMs: tuning.inputOffsetMs)
-    }
-
     public var endMs: Double { startMs + durationMs }
 
     /// Where the guide is at (judged) time `ms`: the start point before, the end point after.
@@ -130,17 +156,6 @@ public struct PathFollowScorer: Sendable {
         bucketCounts[bucket] += 1
         lastCredit = c
         return c
-    }
-
-    /// Credits every empty bucket after (raw) time `rawMs` with `credit`. Used when a slider is let go
-    /// just before its end, within the release grace.
-    public mutating func creditRemaining(afterMs rawMs: Double, credit: Double) {
-        let n = bucketSums.count
-        let first = min(Int(progress(atMs: rawMs - inputOffsetMs) * Double(n)), n - 1)
-        for b in first..<n where bucketCounts[b] == 0 {
-            bucketSums[b] = credit
-            bucketCounts[b] = 1
-        }
     }
 
     /// Follow score, 0...1.

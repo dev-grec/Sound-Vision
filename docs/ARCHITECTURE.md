@@ -40,6 +40,8 @@ Imports Foundation and simd only. No RealityKit, SwiftUI or AVFoundation. It is 
 | `GameSession` | `Gameplay/GameSession.swift` | One play-through: `advance(nowMs:inputs:)` handles inputs, then auto-misses. Returns `Event`s (judged or ignored-with-reason). Per-note `approaches` and `hasAppeared` (D16, D17). Tap notes only in M0. |
 | `NoteApproach` | `Gameplay/NoteApproach.swift` | Pop-up time and approach-ring progress and scale for a target (D17) |
 | `StrokePath`, `PathFollowScorer`, `RevealState` | `Gameplay/StrokeFollow.swift` | Path interpolation; bucketed follow scoring for slider balls and stroke guides (separate tolerances); stroke reveal level and animation |
+| `SliderProgress` | `Gameplay/SliderProgress.swift` | A held slider's knob (projected drag, never backward), finish detection, finish-time windows (D20) |
+| `DragTracker` | `Input/DragTracker.swift` | Maps a drag to view points from hand movement since the pinch (D19) |
 | `Slider`, `CardinalDirection` | `Beatmap/Beatmap.swift` | A tap note's optional slider (duration + view-space path); `TapNote.sliderBallPoint` |
 | `RandomSliders`, `SeededRandom` | `Beatmap/RandomSliders.swift` | Development: seeded random cardinal sliders that keep the map valid (DECISIONS D19) |
 | `InputEvent`, `InputSource`, `ScriptedInputSource` | `Input/InputEvent.swift` | Device-independent input; scripted source for tests and autoplay |
@@ -65,7 +67,7 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 | `Scene/GameSceneController` | Per-frame bridge: clock → rotation → inputs → `GameSession` → note visuals, popups, HUD. No game rules live here. |
 | `Scene/GameView` | RealityView + HUD attachment + `SpatialTapGesture().targetedToAnyEntity()` |
 | `Scene/GlassObject` | Glass variants A/B/C, the shells, the rotating `surfaceRoot`, sort layers (`setSide`) |
-| `Scene/SliderVisuals` | Slider track, end marker, ball and follow ring (orange when drifting); `DragCursor` shows where a drag projects |
+| `Scene/SliderVisuals` | Slider track, end marker, knob (follows the drag; orange when lost), countdown `TimerLabel`; `DragCursor` shows where a drag projects |
 | `Scene/NoteVisuals` | Note entities (disc + collision + input target + hover) and looks; `JudgmentPopups` |
 | `Scene/PlacementRig` | Head anchor (`.once`) → placement entity 1.1 m ahead, slightly low |
 | `Scene/MeshBuilders`, `SceneMath` | Procedural meshes (fresnel-UV sphere, surface ribbons, approach-ring annulus); Double↔Float conversions |
@@ -86,7 +88,7 @@ The system does look-and-pinch hit testing; gaze is never read. Two gestures run
 - `SpatialTapGesture().targetedToAnyEntity()` → `GestureInputSource.tap(on:)` → `.tap(targetID, atMs)` on release.
 - `DragGesture(minimumDistance: 0).targetedToAnyEntity()` → `GestureInputSource.drag(on:point:)`/`dragEnded` → `.dragBegan` (press), `.dragChanged`, `.dragEnded`. `GameSceneController` converts the drag location into the placement entity and projects it onto the sphere as a view-space `SurfacePoint`.
 
-The first of the two to reach `GameSession` judges a note, and the second is ignored as already judged. Slider follow samples come from the drag. Events are stamped with the audio clock on arrival and processed on the next frame.
+The first of the two to reach `GameSession` judges a note, and the second is ignored as already judged. Drag samples move the held slider's knob (`SliderProgress`). Events are stamped with the audio clock on arrival and processed on the next frame.
 
 ## Build system
 

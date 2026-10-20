@@ -80,22 +80,24 @@ public struct Tuning: Codable, Sendable, Equatable {
     /// Duration of the color-fill animation when a stroke completes, in ms. [device]
     public var revealAnimationMs: Double = 600
 
-    // MARK: Sliders (a tap note with a path: pinch the head on the beat, hold, drag along the path)
+    // MARK: Sliders (a tap note with a path: pinch the head on the beat, then drag the knob along the
+    // track and reach the end at the slider's target time)
 
-    /// Drag samples within this angle of the slider ball earn full credit. [device]
-    public var sliderFollowToleranceDeg: Double = 8
-    /// Credit falls linearly to zero at this angle from the ball. [device]
-    public var sliderFollowFalloffDeg: Double = 20
-    /// Follow score at or above which the slider keeps its head judgment.
-    public var sliderKeepJudgmentScore: Double = 0.8
-    /// Follow score at or above which the slider drops one tier (Perfect → Great → Good).
-    /// Below it the slider breaks: Miss.
-    public var sliderBreakScore: Double = 0.5
-    /// Validator: the slider ball may not move faster than this. [device]
+    /// The knob follows the player's drag while the drag is within this angle of the track; further away
+    /// it stops (and shows as lost). [device]
+    public var sliderGrabRadiusDeg: Double = 15
+    /// The slider is finished when the knob is within this angle of the track's end. [device]
+    public var sliderEndToleranceDeg: Double = 1.5
+    /// Finish-time windows (half-widths, ms) around the target time (hit time + duration). More generous
+    /// than tap windows: dragging to a point is less precise than pinching. Finishing earlier than the Good
+    /// window is "Early" (a Miss); not finishing by its end is a Miss. [device]
+    public var sliderEndPerfectWindowMs: Double = 100
+    public var sliderEndGreatWindowMs: Double = 180
+    public var sliderEndGoodWindowMs: Double = 260
+    /// Validator: a slider's required pace (track length / duration) may not exceed this. [device]
     public var maxSliderSpeedDegPerSec: Double = 75
-    /// Letting go this close to a slider's end counts the rest as followed at the latest sample's credit,
-    /// so releasing on the end marker a moment before the ball arrives isn't punished. [device]
-    public var sliderReleaseGraceMs: Double = 150
+    /// How long the slider timer shows the final early/late time after the slider finishes, in ms.
+    public var sliderResultDisplayMs: Double = 900
 
     // MARK: Random sliders (development only, until levels are designed)
 
