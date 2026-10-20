@@ -55,6 +55,17 @@ final class AppModel {
         if defaults.object(forKey: "inputOffsetMs") != nil {
             tuning.inputOffsetMs = defaults.double(forKey: "inputOffsetMs")
         }
+        // Latency A/B switches (DECISIONS D21): -inputEventTimestamps NO, -processInputOnArrival NO,
+        // -hitSoundVolume 0.
+        if defaults.object(forKey: "inputEventTimestamps") != nil {
+            tuning.useInputEventTimestamps = defaults.bool(forKey: "inputEventTimestamps")
+        }
+        if defaults.object(forKey: "processInputOnArrival") != nil {
+            tuning.processInputOnArrival = defaults.bool(forKey: "processInputOnArrival")
+        }
+        if defaults.object(forKey: "hitSoundVolume") != nil {
+            tuning.hitSoundVolume = defaults.double(forKey: "hitSoundVolume")
+        }
     }
 
     /// Mode requested by the `-autostart` launch argument, if any.
