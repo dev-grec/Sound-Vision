@@ -16,7 +16,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 - **Audio master clock** (`AudioEngineClock`) and the runtime click synthesizer.
 - **Glass rendering prototype** (Glass Lab, variants A/B/C). Findings are in DECISIONS D10. C is the gameplay default.
 - **Tap-note gameplay** (DECISIONS D17, D18, D9): a slowly rotating glass sphere in front of the player. Notes pop up at fixed spots around its front (they don't move), and a shrinking ring closes on each note exactly on the beat. Look-and-pinch via `SpatialTapGesture` on entities. A pinch outside the window ends the note as a Miss shown as "Early"/"Late". Judgment popups, a HUD (with an orange AUTOPLAY badge when autoplay is on), and a result summary in the launcher. Autoplay plays the whole map through the same input protocol.
-- **Sliders** (DECISIONS D19, D20): some notes carry a slider: pinch the head on the beat, then drag the knob (it follows the drag) along the track and reach the end at the target time. A countdown timer above the slider reads 0.00 at Perfect (±100 ms). Early is a Miss, and so is late or never reaching the end. Random up/down/left/right sliders are added each play for development (launcher toggle; seed logged; `-sliderSeed N` replays).
+- **Sliders** (DECISIONS D19, D20): some notes carry a slider: pinch the head on the beat, then drag the knob (it follows the drag) along the track and reach the end at the target time. A countdown timer beside the slider reads 0.00 at Perfect (±100 ms). Early is a Miss, and so is late or never reaching the end. Random up/down/left/right sliders are added each play for development (launcher toggle; seed logged; `-sliderSeed N` replays).
 
 ### Verified in the simulator
 
@@ -27,6 +27,7 @@ Nothing has been run on a Vision Pro yet. Everything that needs the headset is i
 - Without autoplay (screenshots): notes pop up at different spots with a wide faint ring that tightens onto them, and turn into Misses when their window passes.
 - Autoplay shifted 400 ms early (`-autoplayEarlyMs 400`): every pinch ends its note as a Miss with "Early" (log: `hit n01: miss, delta -400 ms`).
 - Sliders with autoplay: random layouts per play, all four directions, 0.5–1 s. Screenshots show the track, end marker, knob, and the timer counting down (0.57, then 0.15) and then showing the finish delta (−0.03, Perfect color). Full run (seed 1261861787, 5 sliders): 34/34 Perfect; slider finishes landed 16–66 ms before target.
+- Design pass (D21), screenshots: the launcher is gone during play and comes back with the result after the song (`-exitOnFinish YES`); notes, rings, slider lanes, the timer plate and popup shadows read clearly over the light simulator room; the countdown shows every digit. Full autoplay run (seed 3, 7 sliders): 34/34 Perfect.
 - **Owner, in the simulator: clicking works.** The log of the owner's session showed Perfect/Great/Good hits with deltas between -104 and +165 ms.
 
 ### Not verified anywhere yet
@@ -41,7 +42,6 @@ Every pinch is logged at info level ("pinch gesture on …", "hit …", "pinch o
 
 ## Known issues
 
-- The launcher window stays open behind the sphere during play and shows through the glass. Consider hiding it during play (M2 menus).
 - Far/near sorting assumes the player is in front (fixed front direction). This needs the live viewpoint when walking around the artwork in M2 (D4, D10).
 - `Tuning`'s synthesized Decodable needs every key, so it needs a tolerant decoder before persisting settings in M2 (D14).
 
@@ -64,3 +64,6 @@ Owner feedback, round 4: "sliders a bit quicker" and "Perfect on the click, foll
 Owner feedback, round 5: "the button on the slider should follow the cursor… each slider needs a predetermined time to finish… early = early, not in time = miss… a little timer on top where 0 is perfect… some grace for perfects." Done (D20): knob follows the drag, finish judged against the target time with wider slider windows, timer above each slider. The timer's digits vanished on every-frame mesh swaps in the simulator; it now toggles pre-built glyph entities.
 **Rule for future sessions:** after scripted simulator runs, relaunch the app plain (`xcrun simctl launch booted com.devgrec.SoundVision`) so the owner doesn't inherit autoplay.
 Simulator verification is scripted: `scripts/run-sim.sh -autostart game -autoplay YES`, then `xcrun simctl io booted screenshot <file>`. The game logs `started`/`finished` lines under subsystem `com.devgrec.SoundVision`; read them with `xcrun simctl spawn booted log stream --predicate 'subsystem == "com.devgrec.SoundVision"'`.
+
+### 2026-10-19, design pass (D21)
+Presentation only; no gameplay rule changed. The launcher window is dismissed while a game is open and reopened when the space closes (the HUD has Exit / Back to Menu), which fixes the known issue of the window showing through the glass. Notes got a white rim and the approach ring a dark outline; sliders a lane with white edges and a rimmed knob; the slider timer bigger digits on a dark plate, moved beside the slider (below horizontal ones, outside vertical ones) so it clears the track and popups; judgment popups a drop shadow, starting just above their note. New Tuning entries: `approachRingThicknessM`, `approachRingStartOpacity`, `noteHitFlashMs`, `noteMissFadeMs`, `sliderTimerFontSizeM`. New launch argument `-exitOnFinish YES`. All simulator-only; new items are on the device checklist.

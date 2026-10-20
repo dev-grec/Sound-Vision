@@ -13,18 +13,19 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] Far-side notes and strokes look like they're behind the glass, and near-side ones look in front. No sort popping as items cross the silhouette.
 - [ ] No z-fighting between notes or ribbons and the glass.
 - [ ] Far-side opacity (`Tuning.farSideOpacity` 0.35): can approaching notes be seen coming around without being distracting?
-- [ ] Approach ring: is it easy to see where a note popped up, and to read when the ring closes? Ring start size (`approachRingStartScale` 3×), approach time (`approachMs` 1500), thickness (3 mm).
+- [ ] Approach ring: is it easy to see where a note popped up, and to read when the ring closes onto the note's white rim? Ring start size (`approachRingStartScale` 3×), approach time (`approachMs` 1500), thickness (`approachRingThicknessM` 4 mm), start opacity (`approachRingStartOpacity` 0.45). Does the dark outline help in a bright room without looking heavy in a dim one? (D21)
 - [ ] Pop-up (`noteFadeInMs` 200): noticeable without being jarring.
 - [ ] Streams of one note per beat (500 ms at 120 BPM): can the eyes keep up with left-to-right / diagonal / circle streams? Do they actually lead the eye?
 - [ ] Early/Late: a pinch outside the window ends the note as a Miss. Does that feel fair with real pinch latency, or does it punish slightly-early pinches too much?
-- [ ] Judgment popups are readable and don't block the next note.
+- [ ] Judgment popups are readable (drop shadow) and don't block the next note; they start just above their note (D21).
 - [ ] HUD above the sphere is readable, and its position is comfortable.
 
 ## Placement and comfort
 
 - [ ] The sphere appears about 1.1 m ahead, slightly below eye level, at a comfortable size (radius 0.3 m in the test map).
 - [ ] Launching with the head tilted: is the placement badly tilted? (DECISIONS D4)
-- [ ] The launcher window sits behind the sphere and shows through the glass. Is it distracting? (Possible fix: hide the window during play, M2.)
+- [ ] The launcher window disappears when a game starts and comes back (with the result) when the space closes: via the HUD's Exit / Back to Menu, and when the system closes the space. The app must not end up with no window and no space (D21).
+- [ ] The HUD's Exit button is easy to look at and pinch without hitting notes.
 - [ ] Rotation speed (12°/s, then 8°/s after beat 64 in the test map) feels slow enough to target with the eyes.
 - [ ] Note spacing: `minNoteSeparationDeg` 25° between targets on screen at the same time. Is it too tight or too loose for eye targeting?
 
@@ -43,10 +44,10 @@ Everything here has been checked only in the visionOS simulator, or not at all, 
 - [ ] **Drag mapping:** the white drag dot starts on the slider head and follows the hand, so you can stay on the ball. It's relative tracking (DECISIONS D19); also try launching the game while looking off to one side.
 - [ ] Slider finish windows (Perfect ±100, Great ±180, Good ±260 ms): fair for dragging with real latency?
 - [ ] Grab radius (15°): the knob keeps following during natural hand wobble but stops when you're clearly off the track. End tolerance (1.5°): reaching the end feels deliberate, not accidental.
-- [ ] The timer above the slider is readable and useful as a pacing cue (placeholder UI; DECISIONS D20).
+- [ ] The timer beside the slider (below horizontal, outside vertical ones; 3 cm digits on a dark plate) is readable, easy to glance at while dragging, and useful as a pacing cue (placeholder UI; DECISIONS D20, D21). Does a timer outside the sphere's silhouette feel detached?
 - [ ] Hand travel: a 45° slider on a 0.3 m sphere is about 24 cm of arc. Comfortable over 0.5–2 s?
 - [ ] Slider speed limit (75°/s), random lengths (20–45°) and durations (1–2 beats).
-- [ ] Track, end marker and knob are readable; the lost color (orange) is noticeable.
+- [ ] Track (lane with white edges), end ring and knob are readable; the lost color (orange) is noticeable.
 - [ ] Simultaneous tap and drag gestures don't interfere: plain notes still register reliably.
 
 ## Audio and timing

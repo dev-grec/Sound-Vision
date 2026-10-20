@@ -60,15 +60,15 @@ A synchronized folder: files added here join the target with no pbxproj edit.
 | Piece | Responsibility |
 |---|---|
 | `SoundVisionApp`, `AppModel` | Scenes (WindowGroup + mixed ImmersiveSpace), shared state (mode, tuning, autoplay, glass variant, last result), launch-argument hooks for automated runs |
-| `Launcher/LauncherView`, `MapLibrary` | 2D window: play, Glass Lab, autoplay toggle, input-offset slider, glass variant picker, validation messages, last result. Loads `Maps/` from the bundle. |
+| `Launcher/LauncherView`, `MapLibrary` | 2D window: play, Glass Lab, autoplay toggle, input-offset slider, glass variant picker, validation messages, last result. Loads `Maps/` from the bundle. Dismissed while a game's immersive space is open, and reopened by `ImmersiveRootView` when it closes (DECISIONS D21). |
 | `Audio/AudioEngineClock` | **Master clock.** AVAudioEngine + AVAudioPlayerNode; `nowMs` from the render position (see its doc comment). Loads click or file audio. |
 | `Audio/ClickTrackSynth` | Runtime metronome synthesis for `generatedClick` maps |
 | `Input/GestureInputSource` | Buffers entity-targeted gestures as `InputEvent`s stamped with the clock. `GameTargetComponent` tags an entity with its note or stroke ID. |
 | `Scene/GameSceneController` | Per-frame bridge: clock → rotation → inputs → `GameSession` → note visuals, popups, HUD. No game rules live here. |
-| `Scene/GameView` | RealityView + HUD attachment + `SpatialTapGesture().targetedToAnyEntity()` |
+| `Scene/GameView` | RealityView + HUD attachment (with the Exit button, since the launcher is hidden during play) + `SpatialTapGesture().targetedToAnyEntity()` |
 | `Scene/GlassObject` | Glass variants A/B/C, the shells, the rotating `surfaceRoot`, sort layers (`setSide`) |
-| `Scene/SliderVisuals` | Slider track, end marker, knob (follows the drag; orange when lost), countdown `TimerLabel`; `DragCursor` shows where a drag projects |
-| `Scene/NoteVisuals` | Note entities (disc + collision + input target + hover) and looks; `JudgmentPopups` |
+| `Scene/SliderVisuals` | Slider track (edged lane), end ring, knob (follows the drag; orange when lost), countdown `TimerLabel` beside the slider on a dark plate; `DragCursor` shows where a drag projects |
+| `Scene/NoteVisuals` | Note entities (disc + rim + approach ring + collision + input target + hover), looks and their clock-driven animations (`showApproach`/`showHit`/`showMiss`); `JudgmentPopups` |
 | `Scene/PlacementRig` | Head anchor (`.once`) → placement entity 1.1 m ahead, slightly low |
 | `Scene/MeshBuilders`, `SceneMath` | Procedural meshes (fresnel-UV sphere, surface ribbons, approach-ring annulus); Double↔Float conversions |
 | `GlassLab/GlassLabView` | Rendering prototype scene (debug; spins on host time) |
