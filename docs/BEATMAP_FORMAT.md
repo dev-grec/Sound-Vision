@@ -22,7 +22,7 @@ Maps are hand-written JSON until the editor exists (M3). Run `scripts/test.sh` a
   ],
   "strokes": [
     { "id": "s1", "startMs": 42000, "durationMs": 2000,
-      "path": [ { "lat": -10, "lon": -104 }, { "lat": 0, "lon": -112 }, { "lat": 10, "lon": -120 } ],
+      "path": [ { "lat": 10, "lon": -104 }, { "lat": 0, "lon": -112 }, { "lat": -10, "lon": -120 } ],
       "color": "#FF6A3D" }
   ]
 }
@@ -73,6 +73,8 @@ Each segment is `{ "startBeat", "axis": [x, y, z], "degreesPerBeat" }`, and appl
 > A note at 4000 ms is beat 8, so θ = 48° and lon = -48.
 > A note at 34000 ms is beat 68, so θ = 384 + 4×4 = 400°, which is 40° after wrapping, so lon = -40.
 
+**Laps:** the object keeps turning, so every surface point passes the front once per revolution (30 s at 12°/s). A note is shown and targetable only on its *final approach*: it fades in when, counting back from its hit time, it was last `Tuning.noteAppearAngleDeg` (150°) from front. On earlier laps it's hidden. You can reuse a surface spot for a later note, as long as the two notes aren't targetable at the same time.
+
 Keep latitude modest (about ±15°). The angle from zone center at hit time must be within `Tuning.noteComfortAngleDeg` (20°) to avoid a warning, and within `Tuning.hitZoneHalfAngleDeg` (30°) to be hittable at all.
 
 ## Strokes
@@ -98,7 +100,7 @@ Keep latitude modest (about ±15°). The angle from zone center at hit time must
 - a note outside the hit zone at its time
 - a stroke with fewer than two points, a non-positive duration, a segment of 170° or more, or a start outside the zone
 - overlapping strokes
-- **crowded targets**: two targets (notes or stroke starts) less than `Tuning.simultaneityWindowMs` (2000 ms) apart in time and less than `Tuning.minNoteSeparationDeg` (25°) apart on the surface. The object is rigid, so their separation never changes as it turns.
+- **crowded targets**: two targets (notes or stroke starts) that are targetable at the same time and less than `Tuning.minNoteSeparationDeg` (25°) apart on the surface. A target is targetable from its final approach within `targetableHalfAngleDeg` (40°) until its Good window closes. At 12°/s that's about 3.5 s, so same-latitude notes 2 s apart (24°) are too close. The object is rigid, so their separation never changes as it turns.
 
 **Warnings** (the map loads):
 

@@ -1,3 +1,90 @@
 # Decisions
 
-Design choices and why. Read before undoing something that looks odd.
+Design choices and why. Read this before undoing something that looks odd. When you change one, update the entry rather than deleting it, and say why.
+
+## Architecture
+
+### D1. All game logic in RhythmCore, a pure Swift package (M0)
+Beatmaps, clock math, rotation, the zone, judging, scoring, stroke follow and reveal state all live in `RhythmCore/`, which imports only Foundation and **simd**. It is tested with `swift test` on the Mac, with no simulator and no headset. simd is allowed because it is plain Apple math (not RealityKit) and makes the handoff to entity transforms trivial. The app contains no game rules: it reads the clock, moves entities and forwards input.
+
+### D2. The audio playback position is the master clock (M0)
+`AudioEngineClock.nowMs` reads `AVAudioPlayerNode.playerTime(forNodeTime: lastRenderTime)`. Between render buffers (about 10 ms) it interpolates using the render timestamp's host time, capped at 30 ms. It then subtracts `AVAudioSession.outputLatency`, and it never goes backward. Nothing uses frame counts or accumulated deltas. Rotation, judging and auto-misses are pure functions of this value in RhythmCore. The residual error (display latency, pinch latency) is absorbed by the user's input offset. Exact A/V sync is on the device checklist.
+
+### D3. The click track is synthesized at runtime (M0)
+The owner's rule is to never commit audio they haven't supplied, but the test map needs to be playable from day one. So beatmaps can say `"audio": {"generatedClick": {...}}`, and `ClickTrackSynth` builds the PCM buffer from the BPM, with no file involved. Real songs use `"audio": {"file": ...}`. That path is implemented but untested until real audio arrives.
+
+### D4. Front direction fixed at placement, using a head anchor with `.once` (M0)
+Apps can't follow the head without ARKit. `PlacementRig` uses `AnchorEntity(.head, trackingMode: .once, physicsSimulation: .none)`: the object appears 1.1 m in front of where the head was when the space opened (12 cm below eye level) and then stays put in the room. The hittable zone faces that original head position (`Playfield.front = +Z` of the placement frame). If the player moves sideways mid-song, the zone doesn't follow. That is acceptable for a seated or standing game.
+- `physicsSimulation: .none` because anchored content in the default `.isolated` simulation may not be hit-testable by entity-targeted gestures.
+- If the head was tilted at launch, the placement frame inherits the tilt. That's on the device checklist.
+- **Not done:** ARKit `WorldTrackingProvider` device pose. It is not hand or eye tracking, but it adds an ARKit session and could track the zone continuously. It needs the owner's approval first. It may be needed in M2, when the player walks around the finished artwork (see D10).
+
+### D5. Hand-written Xcode project with synchronized folders (M0)
+No xcodegen or tuist was installed, and adding tools to the owner's Mac wasn't necessary. `SoundVision.xcodeproj/project.pbxproj` is small and hand-maintained:
+- `SoundVision/` is a `PBXFileSystemSynchronizedRootGroup`, so new Swift files join the target automatically. **Don't add per-file entries.**
+- `Maps/` is a folder reference, so it is copied with its folder structure and every map keeps its own `beatmap.json`.
+- RhythmCore is an `XCLocalSwiftPackageReference`.
+- `Config/Info.plist` lives outside the synchronized folder, so it isn't also copied as a resource.
+
+### D6. Swift 6 with MainActor default isolation in the app (M0)
+The app target uses `SWIFT_VERSION = 6.0`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and approachable concurrency. App classes that implement RhythmCore protocols use isolated conformances (`final class AudioEngineClock: @MainActor PlaybackClock`). RhythmCore's types are `Sendable` value types.
+
+### D7. Don't name a type `GameController` (M0)
+It clashes with Apple's GameController framework, which RealityKit pulls in. The scene bridge is `GameSceneController`.
+
+## Input and judging
+
+### D8. System look-and-pinch only (owner's rule)
+Notes are entities with `CollisionComponent` + `InputTargetComponent` + `HoverEffectComponent` and a `GameTargetComponent(targetID:)`. `SpatialTapGesture().targetedToAnyEntity()` delivers pinches. No ARKit hand tracking, no eye tracking, and nothing reads gaze before a pinch.
+- **The glass shells have no collision or input target**, so they can't swallow pinches aimed at notes.
+- A note's input target is enabled only within `Tuning.targetableHalfAngleDeg` (40°) of front, so far-side notes seen through the glass can't be pinched, and the hover highlight appears as a note arrives.
+- A pinch must target the note entity itself. There is no "nearest note" assist. If device testing shows misses from imprecise targeting, try a bigger `noteHitRadiusScale` before adding an assist.
+
+### D9. Pinches are timestamped on arrival, and the offset is applied only in RhythmCore (M0)
+Gesture callbacks carry no audio timestamp, so `GestureInputSource` stamps each event with `clock.nowMs` when the callback runs. `Tuning.inputOffsetMs` is subtracted only in `TapJudge.delta`, `GameSession` (zone check and auto-miss) and `StrokeFollowScorer`. Never apply it in the app as well.
+- Each frame, inputs are processed **before** auto-misses, so a pinch stamped inside its window still counts if the frame that delivers it lands just after the window closed.
+- A pinch outside the zone or the timing window is **ignored, not punished**: imprecise targeting shouldn't break combos. A note becomes a Miss only when its Good window passes unhit.
+
+## Rendering
+
+### D10. Glass rendering: variant C (two sorted shells + baked fresnel) is the gameplay default (M0)
+**Problem:** overlapping transparent meshes in RealityKit can sort wrongly. The glass, notes behind it and notes in front of it all overlap.
+
+**Constraints found in the visionOS 26.5 SDK:**
+- `CustomMaterial` (Metal surface shaders) is `@available(visionOS, unavailable)`.
+- RealityKit has no refraction or screen-space transmission for app content. "Glass" here means transparency, specular highlights and clearcoat.
+- A custom fresnel would need a Reality Composer Pro ShaderGraph. No MaterialX node definitions ship on disk to check node IDs against, so a hand-written `.usda` graph would be guesswork. Building one in the Reality Composer Pro GUI is an M3 polish option.
+
+**What the Glass Lab compared** (simulator screenshots, 2026-10-19; switch variants live in the launcher):
+- **A, naive** (one transparent PBR sphere, `faceCulling = .none`, no sort help). It looks glassy, and the system lighting gives a nice rim highlight on its own. But far-side notes render as solid as near ones, so you can't tell front from back, which matters because the approach is coming around from behind. **Rejected.**
+- **B, two shells + sort order.** A back-face shell (`faceCulling = .front`, opacity 0.10) and a front-face shell (`.back`, 0.18) in one `ModelSortGroup`. Each frame every surface item is put in layer 0 (far: drawn before the back shell) or layer 3 (near: drawn after the front shell), decided by the sign of its normal against the front direction. Far items are also dimmed to `Tuning.farSideOpacity` (0.35) with `OpacityComponent`. Depth reads correctly: far notes and strokes look like they're behind the glass, and near ones sit on it. No sorting artifacts were seen in the screenshots.
+- **C, B + baked fresnel.** The same shells, built as a UV sphere with poles on ±Z and a `BillboardComponent` that keeps +Z toward the viewer. A 1×256 grayscale opacity ramp along v (polar angle from the viewer: 0.05 facing the viewer, rising to 0.65 at the silhouette) is used as the transparent-blending opacity texture. The center is a little clearer than B, so notes and strokes behind the front glass keep more color, and the rim stays bright. **The difference from B is subtle in the simulator.**
+
+**Chosen:** C for gameplay (`GlassVariant.defaultForGameplay`). B is the fallback if C's texture fails to build. The shells don't rotate (a sphere looks the same however it's turned), which is what lets C keep its rim on the viewer. Only `surfaceRoot` rotates.
+
+**Known limits:**
+- Sorting uses the fixed front direction, not the live head position. That is fine while the player stands in front. When the player walks around the artwork in M2, far and near need the real viewpoint (see D4).
+- A note crossing the silhouette switches layer in one frame. It hasn't been seen to pop in the simulator, but it's on the device checklist.
+- Everything above is simulator-only. **Check the glass look on the headset.**
+
+### D11. Notes and strokes are lifted off the surface (M0)
+Notes sit `Tuning.noteSurfaceLiftM` (4 mm) above the sphere, and stroke ribbons 2 mm above, to avoid z-fighting with the shells. Ribbons use `faceCulling = .none` because far-side ribbons are seen from behind through the glass. Long ribbons are split into pieces, so each piece is sorted on its own side as it crosses over.
+
+## Beatmaps and scoring
+
+### D12. Beatmap units and shapes (M0)
+Times are ms from the start of the audio, because notes are exact moments. Rotation is in beats, because it follows the meter. Surface points are JSON objects (`{"lat","lon"}`), not pairs, so other shapes can add coordinate kinds without breaking v1. The crowding rule compares surface positions directly: the object is rigid, so the angle between two points on it never changes as it rotates. Two targets are compared when their targetable intervals overlap (D16), not within a fixed time window. The first version used a fixed 2 s window, which missed same-latitude notes 2 s apart that are both targetable at once.
+
+### D13. Stroke follow score is bucketed by time (M0, used from M1)
+The stroke's duration is split into `Tuning.strokeScoreBuckets` buckets. Each bucket takes its samples' mean credit, and an empty bucket scores 0. This makes the score independent of the drag event rate, and letting go early costs exactly the unplayed fraction.
+
+### D14. Tuning is one Codable struct with defaults (M0)
+Every game-feel number is in `RhythmCore/Sources/RhythmCore/Tuning.swift`. The synthesized `Decodable` requires every key, so M2's persisted settings need a decoder that falls back to the defaults for missing keys.
+
+### D16. Notes exist only on their final approach (M0, found in the simulator)
+The object rotates continuously, so every surface point passes the front once per revolution. The first build drew every pending note all the time. The autoplay run in the simulator showed notes due 40 s later glowing as "hittable" in the zone next to the current ones, overlapping them. `Playfield.approach(of:hitMs:tuning:)` finds, counting back from the hit time, when the note was last `noteAppearAngleDeg` (150°) and `targetableHalfAngleDeg` (40°) from front. `GameSession.approaches` holds this per note, and `isOnFinalApproach` gates it. The app hides a note before `appearMs` (it is disabled, so it has no input either) and then fades it in over `noteFadeInMs`. The default of 150° means a note first appears on the far side, faint through the glass, and then comes around, which is the approach the design asks for. Strokes (M1) must use the same rule for their start points. Regression tests: `LappingTests`, `ApproachTests`, `crowdingUsesApproachOverlapNotAFixedWindow`.
+
+## Debug tooling
+
+### D15. Autoplay and launch arguments (M0)
+`ScriptedInputSource.autoplay` feeds perfect taps through the same `InputSource` path as gestures, so the full loop runs in the simulator without clicking. Launch arguments (`-autostart game|glassLab`, `-autoplay YES`, `-glassVariant A|B|C`, `-inputOffsetMs N`) let scripts open scenes directly (`scripts/run-sim.sh`). The Glass Lab spins on host time (`HostTimeClock`) because it plays no audio. **Gameplay must never use HostTimeClock.**
